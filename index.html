@@ -6,7 +6,7 @@
   <title>EQUIPRIME INVENTORY PRO</title>
   <!-- Poppins Font -->
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <!-- Firebase SDKs (compat version for simplicity) -->
+  <!-- Firebase SDKs (compat version) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
@@ -311,7 +311,6 @@
 </div>
 
 <script>
-  // ---------- FIREBASE CONFIG (your project) ----------
   const firebaseConfig = {
     apiKey: "AIzaSyCkoNkDgW9uDAZ6wcTHgzJ7__ik3NsmStc",
     authDomain: "eos-inventory.firebaseapp.com",
@@ -320,8 +319,6 @@
     messagingSenderId: "659110549779",
     appId: "1:659110549779:web:0cf5632cfc3319e46da2e6"
   };
-  // ----------------------------------------------------
-
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth();
   const db = firebase.firestore();
@@ -352,13 +349,7 @@
 
   let currentUser = null;
   let allowedViews = [];
-  // Global data arrays
-  let allInventory = [];
-  let allMachines = [];
-  let allTransactions = [];
-  let allUploads = [];
-  let allDRRecords = [];
-  // Unsubscribe functions
+  let allInventory = [], allMachines = [], allTransactions = [], allUploads = [], allDRRecords = [];
   let unsubInv, unsubMach, unsubTx, unsubUp, unsubDR;
   let currentBranch = "main";
   let branchUnsub = null;
@@ -437,7 +428,6 @@
     unsubTx = db.collection("transactions").onSnapshot(snapshot => {
       allTransactions = snapshot.docs.map(d => d.data());
       if (currentView === "movement") renderMovementView();
-      if (currentView === "kpi") renderKPIView(); // to refresh KPI if needed
     });
     unsubUp = db.collection("uploads").onSnapshot(snapshot => {
       allUploads = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -558,7 +548,7 @@
             <button id="importCsvBtn" class="btn-sm">Import CSV</button>
           </div>
         </div>
-        <div class="overflow-auto"><table class="data-table"><thead><th>Part#</th><th>Name</th><th>Qty</th><th>Price</th><th>Threshold</th><th>Status</th><th>Actions</th></thead><tbody id="branchTbody"></tbody><tr></div>
+        <div class="overflow-auto"><table class="data-table"><thead><th>Part#</th><th>Name</th><th>Qty</th><th>Price</th><th>Threshold</th><th>Status</th><th>Actions</th></thead><tbody id="branchTbody"></tbody></table></div>
       </div>
     `;
     const tbody = document.getElementById("branchTbody");
@@ -574,7 +564,6 @@
       row.insertCell(4).innerText = item.threshold;
       row.insertCell(5).innerHTML = badge;
       let actions = `<button class="editThresh" data-id="${item.id}">✏️</button>`;
-      // Admin delete only for full access users
       if (allowedViews.includes("parts") && (currentUser.email === "adminrom@equiprime.ph" || currentUser.email === "admindex@equiprime.ph")) {
         actions += ` <button class="deletePart" data-id="${item.id}">🗑️</button>`;
       }
@@ -660,7 +649,7 @@
     reader.readAsText(file);
   }
 
-  // ========== MACHINES LOG VIEW (full) ==========
+  // ========== MACHINES LOG VIEW ==========
   async function renderMachinesView() {
     const container = document.getElementById("dynamicContent");
     container.innerHTML = `<div style="background:#fefefe; border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><h3>Machines Log</h3><div id="machinesContent">Loading...</div></div>`;
@@ -745,7 +734,7 @@
     };
   }
 
-  // ========== SUPPLIER TRACKING (static) ==========
+  // ========== SUPPLIER TRACKING ==========
   function renderSuppliersView() {
     document.getElementById("dynamicContent").innerHTML = `
       <div style="background:#fefefe; border:1px solid #acaa93; border-radius:1rem; padding:1rem;">
@@ -941,7 +930,7 @@
     };
   }
 
-  // ========== DELIVERY RECEIPT & SALES ORDER TAB ==========
+  // ========== DELIVERY RECEIPT & SALES ORDER TAB (with Delete All button) ==========
   function renderDRView() {
     const container = document.getElementById("dynamicContent");
     container.innerHTML = `
@@ -962,13 +951,28 @@
     renderDRSubTab();
   }
 
+  async function deleteAllDRRecords() {
+    const snapshot = await db.collection("dr_sales_orders").where("type", "==", currentDRSubTab).get();
+    if (snapshot.empty) {
+      alert("No records to delete.");
+      return;
+    }
+    const batch = db.batch();
+    snapshot.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+    alert(`All records in "${currentDRSubTab === 'north_luzon_pms' ? 'North Luzon PMS' : 'Monitoring of DR'}" have been deleted.`);
+  }
+
   function renderDRSubTab() {
     const records = allDRRecords.filter(r => r.type === currentDRSubTab);
     const container = document.getElementById("drContent");
     container.innerHTML = `
       <div style="border:1px solid #acaa93; border-radius:0.75rem; padding:1rem;">
         <div class="flex" style="justify-content:space-between; margin-bottom:1rem;">
-          <button id="addDRRecordBtn" class="btn-sm">➕ Add Record</button>
+          <div class="flex">
+            <button id="addDRRecordBtn" class="btn-sm">➕ Add Record</button>
+            <button id="deleteAllDRBtn" class="btn-sm" style="background:#fee2e2; color:#b91c1c;">🗑️ Delete All</button>
+          </div>
           <div>
             <input type="file" id="drCsvFile" accept=".csv" style="display:inline; width:auto;">
             <button id="importDRCsvBtn" class="btn-sm">Import CSV</button>
@@ -1007,6 +1011,11 @@
     document.getElementById("addDRRecordBtn").onclick = () => openDRModal();
     document.getElementById("importDRCsvBtn").onclick = () => importDRCSV();
     document.getElementById("exportDRCsvBtn").onclick = () => exportDRCSV();
+    document.getElementById("deleteAllDRBtn").onclick = () => {
+      if(confirm(`⚠️ This will delete ALL records in "${currentDRSubTab === 'north_luzon_pms' ? 'North Luzon PMS' : 'Monitoring of DR'}". Are you sure?`)) {
+        deleteAllDRRecords();
+      }
+    };
   }
 
   function openDRModal(record = null) {
