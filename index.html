@@ -4,9 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
   <title>EQUIPRIME INVENTORY PRO</title>
-  <!-- Poppins Font -->
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <!-- Firebase SDKs (compat version) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
@@ -253,7 +251,7 @@
       position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center; z-index:3000;
     }
     .modal-content {
-      background: #fefefe; padding: 1.5rem; border-radius: 1rem; width: 400px; max-width: 90%; border: 1px solid #acaa93;
+      background: #fefefe; padding: 1.5rem; border-radius: 1rem; width: 500px; max-width: 90%; border: 1px solid #acaa93;
     }
     .sub-tabs {
       display: flex;
@@ -330,7 +328,7 @@
     "admindex@equiprime.ph": ["parts", "machines", "suppliers", "kpi", "movement", "uploads", "backup", "dr_sales"],
     "adminkim@equiprime.ph": ["parts", "kpi", "movement", "uploads"],
     "GMCarlo@equiprime.ph": ["machines"],
-    "Sales.Machines@equiprime.ph": ["machines"],
+    "Sales.Machine@equiprime.ph": ["machines"],
     "admincris@equiprime.ph": ["machines"],
     "admin.andy@equiprime.ph": ["dr_sales"]
   };
@@ -649,87 +647,126 @@
     reader.readAsText(file);
   }
 
-  // ========== MACHINES LOG VIEW ==========
+  // ========== MACHINES LOG VIEW (with extended fields and edit) ==========
   async function renderMachinesView() {
     const container = document.getElementById("dynamicContent");
-    container.innerHTML = `<div style="background:#fefefe; border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><h3>Machines Log</h3><div id="machinesContent">Loading...</div></div>`;
-    let html = `<div class="flex"><input id="machineBrand" placeholder="Brand"><input id="machineModel" placeholder="Model"><input id="machineSerial" placeholder="Serial"><input type="date" id="machineArrival"><button id="addMachineBtn" class="btn-primary">Add Machine</button></div><div id="recentSoldList"></div><table class="data-table"><thead><th>Brand</th><th>Model</th><th>Serial</th><th>Arrival</th><th>Status</th><th>Client</th><th>Departure</th><th>Free Parts</th><th>No Free PM</th><th>Receipt</th><th>Actions</th></thead><tbody id="machinesTbody"></tbody></table>`;
-    document.getElementById("machinesContent").innerHTML = html;
+    container.innerHTML = `
+      <div style="background:#fefefe; border:1px solid #acaa93; border-radius:1rem; padding:1rem;">
+        <h3>Machines Log</h3>
+        <div class="flex" style="margin-bottom:1rem;">
+          <button id="addMachineBtn" class="btn-primary" style="width:auto;">Add Machine</button>
+        </div>
+        <div class="overflow-auto">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Brand</th><th>Model</th><th>Serial Number</th><th>Engine Number</th>
+                <th>Remarks on cost</th><th>Location</th><th>Client</th><th>Remarks</th>
+                <th>Arrival Date</th><th>Current Day</th><th>Aging (days)</th><th>Status</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="machinesTbody"></tbody>
+          </table>
+        </div>
+      </div>
+    `;
     renderMachinesTable();
-    document.getElementById("addMachineBtn").onclick = addMachine;
+    document.getElementById("addMachineBtn").onclick = () => openMachineModal();
   }
 
   async function renderMachinesTable() {
     const tbody = document.getElementById("machinesTbody");
     if(!tbody) return;
     tbody.innerHTML = "";
+    const today = new Date().toISOString().slice(0,10);
     allMachines.forEach(m => {
-      const row = tbody.insertRow();
-      row.insertCell(0).innerText = m.brand||"";
-      row.insertCell(1).innerText = m.model||"";
-      row.insertCell(2).innerText = m.serial||"";
-      row.insertCell(3).innerText = m.arrival||"";
-      row.insertCell(4).innerHTML = m.status==="AVAILABLE"?"<span class='badge badge-green'>AVAILABLE</span>":"<span class='badge badge-red'>SOLD</span>";
-      row.insertCell(5).innerText = m.client||"-";
-      row.insertCell(6).innerText = m.departure||"-";
-      row.insertCell(7).innerText = m.freeParts||"";
-      row.insertCell(8).innerHTML = m.noFreePM?"✅ No free PM":"❌";
-      row.insertCell(9).innerHTML = m.receiptDataURL ? `<a href="${m.receiptDataURL}" target="_blank">View</a>` : "None";
-      let actions = "";
-      if (allowedViews.includes("machines")) {
-        actions = `<button class="deleteMachine" data-id="${m.id}">Delete</button>`;
-        if(m.status==="AVAILABLE") actions += ` <button class="markSoldBtn" data-id="${m.id}">Mark Sold</button>`;
+      const arrivalDate = m.arrivalDate || "";
+      let aging = "";
+      if (arrivalDate) {
+        const arrival = new Date(arrivalDate);
+        const now = new Date();
+        const diffTime = Math.abs(now - arrival);
+        aging = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       }
-      row.insertCell(10).innerHTML = actions;
+      const row = tbody.insertRow();
+      row.insertCell(0).innerText = m.brand || "";
+      row.insertCell(1).innerText = m.model || "";
+      row.insertCell(2).innerText = m.serialNumber || "";
+      row.insertCell(3).innerText = m.engineNumber || "";
+      row.insertCell(4).innerText = m.remarksCost || "";
+      row.insertCell(5).innerText = m.location || "";
+      row.insertCell(6).innerText = m.client || "";
+      row.insertCell(7).innerText = m.remarks || "";
+      row.insertCell(8).innerText = arrivalDate;
+      row.insertCell(9).innerText = today;
+      row.insertCell(10).innerText = aging;
+      let statusText = m.status || "AVAILABLE";
+      let statusBadge = statusText === "AVAILABLE" ? "<span class='badge badge-green'>AVAILABLE</span>" : 
+                        (statusText === "RESERVED" ? "<span class='badge badge-orange'>RESERVED</span>" : 
+                        (statusText === "INTENDED" ? "<span class='badge badge-orange'>INTENDED</span>" : "<span class='badge badge-red'>SOLD</span>"));
+      row.insertCell(11).innerHTML = statusBadge;
+      let actions = `<button class="editMachineBtn" data-id="${m.id}">✏️ Edit</button>`;
+      if (allowedViews.includes("machines") && (currentUser.email === "adminrom@equiprime.ph" || currentUser.email === "admindex@equiprime.ph")) {
+        actions += ` <button class="deleteMachine" data-id="${m.id}">🗑️ Delete</button>`;
+      }
+      row.insertCell(12).innerHTML = actions;
     });
-    if (allowedViews.includes("machines")) {
+    document.querySelectorAll(".editMachineBtn").forEach(btn => btn.onclick = () => openMachineModal(btn.dataset.id));
+    if (allowedViews.includes("machines") && (currentUser.email === "adminrom@equiprime.ph" || currentUser.email === "admindex@equiprime.ph")) {
       document.querySelectorAll(".deleteMachine").forEach(btn => btn.onclick = () => { if(confirm("Delete machine?")) db.collection("machines").doc(btn.dataset.id).delete(); });
-      document.querySelectorAll(".markSoldBtn").forEach(btn => btn.onclick = () => openSoldModal(btn.dataset.id));
-    }
-    const sold = allMachines.filter(m => m.status==="SOLD" && m.departure).sort((a,b)=>new Date(b.departure)-new Date(a.departure)).slice(0,5);
-    const container = document.getElementById("recentSoldList");
-    if(container) {
-      if(sold.length) container.innerHTML = `<h4>Recently Sold</h4><ul>${sold.map(m=>`<li>${m.brand} ${m.model} (${m.serial}) → ${m.client} on ${m.departure}</li>`).join("")}</ul>`;
-      else container.innerHTML = "<p>No recent sales</p>";
     }
   }
 
-  async function addMachine() {
-    const brand = document.getElementById("machineBrand").value.trim();
-    const model = document.getElementById("machineModel").value.trim();
-    const serial = document.getElementById("machineSerial").value.trim();
-    if(!brand || !model || !serial) { alert("Brand, Model, Serial required"); return; }
-    await db.collection("machines").add({
-      brand, model, serial,
-      arrival: document.getElementById("machineArrival").value,
-      freeParts: "",
-      noFreePM: false,
-      status: "AVAILABLE", client: "", departure: "", receiptDataURL: "",
-      timestamp: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    document.getElementById("machineBrand").value="";
-    document.getElementById("machineModel").value="";
-    document.getElementById("machineSerial").value="";
-  }
-
-  function openSoldModal(machineId) {
-    const machine = allMachines.find(m=>m.id===machineId);
-    if(!machine) return;
+  function openMachineModal(machineId = null) {
+    const machine = machineId ? allMachines.find(m => m.id === machineId) : null;
     const modal = document.createElement("div"); modal.className = "modal";
-    modal.innerHTML = `<div class="modal-content"><h3>Mark SOLD: ${machine.brand} ${machine.model}</h3>
-      <label>Client *</label><input type="text" id="soldClient"><br>
-      <label>Departure Date *</label><input type="date" id="soldDate"><br>
-      <label>Receipt *</label><input type="file" id="soldReceipt" accept="image/*,application/pdf"><br>
-      <div class="flex"><button id="confirmSoldBtn" class="btn-primary">Confirm</button><button id="cancelSoldBtn" class="btn-sm">Cancel</button></div></div>`;
+    modal.innerHTML = `
+      <div class="modal-content">
+        <h3>${machine ? 'Edit Machine' : 'Add New Machine'}</h3>
+        <div class="form-row"><label>Brand</label><input id="machineBrand" value="${machine?.brand || ''}"></div>
+        <div class="form-row"><label>Model</label><input id="machineModel" value="${machine?.model || ''}"></div>
+        <div class="form-row"><label>Serial Number</label><input id="machineSerialNumber" value="${machine?.serialNumber || ''}"></div>
+        <div class="form-row"><label>Engine Number</label><input id="machineEngineNumber" value="${machine?.engineNumber || ''}"></div>
+        <div class="form-row"><label>Remarks on cost</label><input id="machineRemarksCost" value="${machine?.remarksCost || ''}"></div>
+        <div class="form-row"><label>Location</label><input id="machineLocation" value="${machine?.location || ''}"></div>
+        <div class="form-row"><label>Client</label><input id="machineClient" value="${machine?.client || ''}"></div>
+        <div class="form-row"><label>Remarks</label><input id="machineRemarks" value="${machine?.remarks || ''}"></div>
+        <div class="form-row"><label>Arrival Date</label><input type="date" id="machineArrivalDate" value="${machine?.arrivalDate || ''}"></div>
+        <div class="form-row"><label>Status</label>
+          <select id="machineStatus">
+            <option value="AVAILABLE" ${machine?.status === 'AVAILABLE' ? 'selected' : ''}>AVAILABLE</option>
+            <option value="RESERVED" ${machine?.status === 'RESERVED' ? 'selected' : ''}>RESERVED</option>
+            <option value="INTENDED" ${machine?.status === 'INTENDED' ? 'selected' : ''}>INTENDED CLIENT</option>
+            <option value="SOLD" ${machine?.status === 'SOLD' ? 'selected' : ''}>SOLD</option>
+          </select>
+        </div>
+        <div class="flex" style="margin-top:1rem;">
+          <button id="saveMachineModalBtn" class="btn-primary">Save</button>
+          <button id="cancelMachineModalBtn" class="btn-sm">Cancel</button>
+        </div>
+      </div>
+    `;
     document.body.appendChild(modal);
-    document.getElementById("cancelSoldBtn").onclick = () => modal.remove();
-    document.getElementById("confirmSoldBtn").onclick = async () => {
-      const client = document.getElementById("soldClient").value.trim();
-      const departure = document.getElementById("soldDate").value;
-      const file = document.getElementById("soldReceipt").files[0];
-      if(!client || !departure || !file) { alert("All fields required"); return; }
-      const receiptDataURL = await readFileAsDataURL(file);
-      await db.collection("machines").doc(machineId).update({ status: "SOLD", client, departure, receiptDataURL });
+    document.getElementById("cancelMachineModalBtn").onclick = () => modal.remove();
+    document.getElementById("saveMachineModalBtn").onclick = async () => {
+      const data = {
+        brand: document.getElementById("machineBrand").value,
+        model: document.getElementById("machineModel").value,
+        serialNumber: document.getElementById("machineSerialNumber").value,
+        engineNumber: document.getElementById("machineEngineNumber").value,
+        remarksCost: document.getElementById("machineRemarksCost").value,
+        location: document.getElementById("machineLocation").value,
+        client: document.getElementById("machineClient").value,
+        remarks: document.getElementById("machineRemarks").value,
+        arrivalDate: document.getElementById("machineArrivalDate").value,
+        status: document.getElementById("machineStatus").value,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      };
+      if (machine) {
+        await db.collection("machines").doc(machine.id).update(data);
+      } else {
+        await db.collection("machines").add(data);
+      }
       modal.remove();
     };
   }
@@ -930,7 +967,7 @@
     };
   }
 
-  // ========== DELIVERY RECEIPT & SALES ORDER TAB (with Delete All button) ==========
+  // ========== DELIVERY RECEIPT & SALES ORDER TAB ==========
   function renderDRView() {
     const container = document.getElementById("dynamicContent");
     container.innerHTML = `
