@@ -4,7 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
   <title>EQUIPRIME INVENTORY PRO</title>
+  <!-- Poppins Font -->
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Firebase SDKs (compat version for simplicity) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
@@ -19,13 +21,11 @@
       display: flex;
       flex-direction: column;
     }
-    /* Dashboard layout: full height */
     .dashboard {
       display: flex;
       flex: 1;
-      min-height: 0; /* prevents overflow */
+      min-height: 0;
     }
-    /* Sidebar with blue background */
     .sidebar {
       width: 280px;
       background: #002a54;
@@ -75,7 +75,6 @@
       background: #2ecc71;
       margin-right: 6px;
     }
-    /* Main content area: full remaining space */
     .main-content {
       flex: 1;
       display: flex;
@@ -83,7 +82,6 @@
       background: #fefefe;
       overflow: auto;
     }
-    /* Fixed top bar with buttons */
     .top-bar {
       display: flex;
       justify-content: flex-end;
@@ -104,13 +102,11 @@
       font-weight: 500;
       margin-left: 0.75rem;
     }
-    /* Scrollable content area */
     .content-scroll {
       flex: 1;
       overflow-y: auto;
       padding: 1.5rem;
     }
-    /* Stats cards row */
     .stats-row {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -138,7 +134,6 @@
       font-size: 0.7rem;
       color: #5a6e8a;
     }
-    /* Two columns for form and alerts */
     .two-columns {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -207,6 +202,8 @@
       font-weight: 500;
     }
     .badge-green { background: #dcfce7; color: #166534; }
+    .badge-red { background: #fee2e2; color: #b91c1c; }
+    .badge-orange { background: #ffedd5; color: #c2410c; }
     .branch-tabs {
       display: flex;
       gap: 0.5rem;
@@ -256,7 +253,26 @@
       position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center; z-index:3000;
     }
     .modal-content {
-      background: #fefefe; padding: 1.5rem; border-radius: 1rem; width: 400px; border: 1px solid #acaa93;
+      background: #fefefe; padding: 1.5rem; border-radius: 1rem; width: 400px; max-width: 90%; border: 1px solid #acaa93;
+    }
+    .sub-tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      border-bottom: 1px solid #acaa93;
+    }
+    .sub-tab-btn {
+      background: none;
+      border: none;
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+      font-weight: 500;
+      color: #5a6e8a;
+      font-family: 'Poppins', sans-serif;
+    }
+    .sub-tab-btn.active {
+      color: #002a54;
+      border-bottom: 2px solid #002a54;
     }
   </style>
 </head>
@@ -273,40 +289,29 @@
 
 <div id="appContainer" style="display:none; height:100vh; display:flex; flex-direction:column;">
 <div class="dashboard">
-  <!-- Sidebar -->
   <div class="sidebar">
     <div class="title">
       <h1>EQUIPRIME</h1>
       <p>INVENTORY PRO</p>
     </div>
-    <div class="nav-menu">
-      <div class="nav-item" data-view="parts">Parts Inventory</div>
-      <div class="nav-item" data-view="machines">Machines Log</div>
-      <div class="nav-item" data-view="suppliers">Supplier Tracking</div>
-      <div class="nav-item" data-view="kpi">KPI Reports</div>
-      <div class="nav-item" data-view="movement">Slow/Fast Moving</div>
-      <div class="nav-item" data-view="uploads">Parts Uploads</div>
-      <div class="nav-item" data-view="backup">Backup / Restore</div>
-    </div>
+    <div class="nav-menu" id="navMenu"></div>
     <div class="network-status">
       <div><span class="status-led"></span> NETWORK STATUS: WAREHOUSE SYNC LIVE</div>
     </div>
   </div>
 
-  <!-- Main content area with fixed top bar -->
   <div class="main-content">
     <div class="top-bar">
       <button id="quickReportBtn" class="btn-sm">Quick Report</button>
       <button id="logoutBtn" class="btn-sm">Logout</button>
     </div>
-    <div class="content-scroll" id="dynamicContent">
-      <!-- Dynamic content loads here -->
-    </div>
+    <div class="content-scroll" id="dynamicContent"></div>
   </div>
 </div>
 </div>
 
 <script>
+  // ---------- FIREBASE CONFIG (your project) ----------
   const firebaseConfig = {
     apiKey: "AIzaSyCkoNkDgW9uDAZ6wcTHgzJ7__ik3NsmStc",
     authDomain: "eos-inventory.firebaseapp.com",
@@ -315,25 +320,50 @@
     messagingSenderId: "659110549779",
     appId: "1:659110549779:web:0cf5632cfc3319e46da2e6"
   };
+  // ----------------------------------------------------
+
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth();
   const db = firebase.firestore();
   const storage = firebase.storage();
 
-  const ADMIN_EMAILS = [
-    "adminkim@equiprime.ph",
-    "admindex@equiprime.ph",
-    "adminrom@equiprime.ph",
-    "admincris@equiprime.ph",
-    "GMCarlo@equiprime.ph",
-    "Sales.Machines@equiprime.ph"
-  ];
+  // ========== ROLE-BASED ACCESS CONTROL ==========
+  const USER_TAB_PERMISSIONS = {
+    "adminrom@equiprime.ph": ["parts", "machines", "suppliers", "kpi", "movement", "uploads", "backup", "dr_sales"],
+    "admindex@equiprime.ph": ["parts", "machines", "suppliers", "kpi", "movement", "uploads", "backup", "dr_sales"],
+    "adminkim@equiprime.ph": ["parts", "kpi", "movement", "uploads"],
+    "GMCarlo@equiprime.ph": ["machines"],
+    "Sales.Machines@equiprime.ph": ["machines"],
+    "admincris@equiprime.ph": ["machines"],
+    "admin.andy@equiprime.ph": ["dr_sales"]
+  };
+  const DEFAULT_VIEWS = ["parts"];
+  const ALL_VIEWS = ["parts", "machines", "suppliers", "kpi", "movement", "uploads", "backup", "dr_sales"];
+  const VIEW_DISPLAY_NAMES = {
+    parts: "Parts Inventory",
+    machines: "Machines Log",
+    suppliers: "Supplier Tracking",
+    kpi: "KPI Reports",
+    movement: "Slow/Fast Moving",
+    uploads: "Parts Uploads",
+    backup: "Backup / Restore",
+    dr_sales: "Delivery Receipt & Sales Order"
+  };
 
-  let currentUser = null, isAdmin = false;
-  let allInventory = [], allMachines = [], allTransactions = [], allUploads = [];
-  let unsubInv, unsubMach, unsubTx, unsubUp;
+  let currentUser = null;
+  let allowedViews = [];
+  // Global data arrays
+  let allInventory = [];
+  let allMachines = [];
+  let allTransactions = [];
+  let allUploads = [];
+  let allDRRecords = [];
+  // Unsubscribe functions
+  let unsubInv, unsubMach, unsubTx, unsubUp, unsubDR;
   let currentBranch = "main";
   let branchUnsub = null;
+  let currentView = "parts";
+  let currentDRSubTab = "north_luzon_pms";
 
   // Login / Logout
   document.getElementById("loginBtn").onclick = () => {
@@ -351,39 +381,71 @@
   auth.onAuthStateChanged(user => {
     if(user) {
       currentUser = user;
-      isAdmin = ADMIN_EMAILS.includes(user.email);
+      const email = user.email;
+      allowedViews = USER_TAB_PERMISSIONS[email] || DEFAULT_VIEWS;
+      console.log("Logged in as:", email, "Allowed views:", allowedViews);
       document.getElementById("loginContainer").style.display = "none";
       document.getElementById("appContainer").style.display = "flex";
+      buildNavigation();
       startGlobalListeners();
-      loadView("parts");
+      if (allowedViews.length > 0) {
+        loadView(allowedViews[0]);
+      } else {
+        alert("You have no access to any module. Contact admin.");
+      }
     } else {
       document.getElementById("loginContainer").style.display = "flex";
       document.getElementById("appContainer").style.display = "none";
-      if(unsubInv) unsubInv(); if(unsubMach) unsubMach(); if(unsubTx) unsubTx(); if(unsubUp) unsubUp();
+      if(unsubInv) unsubInv(); if(unsubMach) unsubMach(); if(unsubTx) unsubTx(); if(unsubUp) unsubUp(); if(unsubDR) unsubDR();
       if(branchUnsub) branchUnsub();
     }
   });
 
+  function buildNavigation() {
+    const navMenu = document.getElementById("navMenu");
+    navMenu.innerHTML = "";
+    for (const view of ALL_VIEWS) {
+      if (allowedViews.includes(view)) {
+        const navItem = document.createElement("div");
+        navItem.className = "nav-item";
+        if (view === currentView) navItem.classList.add("active");
+        navItem.textContent = VIEW_DISPLAY_NAMES[view];
+        navItem.setAttribute("data-view", view);
+        navItem.onclick = () => {
+          loadView(view);
+          document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
+          navItem.classList.add("active");
+        };
+        navMenu.appendChild(navItem);
+      }
+    }
+  }
+
   function startGlobalListeners() {
     unsubInv = db.collection("inventory").onSnapshot(snapshot => {
       allInventory = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      if(document.querySelector('.nav-item.active')?.getAttribute('data-view') === 'parts') renderPartsView();
-      if(document.querySelector('.nav-item.active')?.getAttribute('data-view') === 'movement') renderMovementView();
+      if (currentView === "parts") renderPartsView();
+      if (currentView === "movement") renderMovementView();
       updateDashboardStats();
       renderRestockAlerts();
     });
     unsubMach = db.collection("machines").onSnapshot(snapshot => {
       allMachines = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      if(document.querySelector('.nav-item.active')?.getAttribute('data-view') === 'machines') renderMachinesView();
+      if (currentView === "machines") renderMachinesView();
       updateDashboardStats();
     });
     unsubTx = db.collection("transactions").onSnapshot(snapshot => {
       allTransactions = snapshot.docs.map(d => d.data());
-      if(document.querySelector('.nav-item.active')?.getAttribute('data-view') === 'movement') renderMovementView();
+      if (currentView === "movement") renderMovementView();
+      if (currentView === "kpi") renderKPIView(); // to refresh KPI if needed
     });
     unsubUp = db.collection("uploads").onSnapshot(snapshot => {
       allUploads = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      if(document.querySelector('.nav-item.active')?.getAttribute('data-view') === 'uploads') renderUploadsView();
+      if (currentView === "uploads") renderUploadsView();
+    });
+    unsubDR = db.collection("dr_sales_orders").onSnapshot(snapshot => {
+      allDRRecords = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (currentView === "dr_sales") renderDRView();
     });
   }
 
@@ -411,27 +473,21 @@
     }
   }
 
-  document.querySelectorAll(".nav-item").forEach(item => {
-    item.onclick = () => {
-      document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
-      item.classList.add("active");
-      loadView(item.getAttribute("data-view"));
-    };
-  });
-
   function loadView(view) {
-    const container = document.getElementById("dynamicContent");
-    if(view === "parts") renderPartsView(container);
-    else if(view === "machines") renderMachinesView(container);
-    else if(view === "suppliers") renderSuppliersView(container);
-    else if(view === "kpi") renderKPIView(container);
-    else if(view === "movement") renderMovementView(container);
-    else if(view === "uploads") renderUploadsView(container);
-    else if(view === "backup") renderBackupView(container);
+    currentView = view;
+    if (view === "parts") renderPartsView();
+    else if (view === "machines") renderMachinesView();
+    else if (view === "suppliers") renderSuppliersView();
+    else if (view === "kpi") renderKPIView();
+    else if (view === "movement") renderMovementView();
+    else if (view === "uploads") renderUploadsView();
+    else if (view === "backup") renderBackupView();
+    else if (view === "dr_sales") renderDRView();
   }
 
-  // ========== PARTS INVENTORY VIEW ==========
-  async function renderPartsView(container) {
+  // ========== PARTS INVENTORY VIEW (fully functional) ==========
+  async function renderPartsView() {
+    const container = document.getElementById("dynamicContent");
     container.innerHTML = `
       <div class="stats-row">
         <div class="stat-card"><div class="stat-title">TOTAL UNITS</div><div class="stat-value" id="statTotalUnits">0</div></div>
@@ -439,40 +495,18 @@
         <div class="stat-card"><div class="stat-title">MANAGED VALUE</div><div class="stat-value" id="statValue">₱0</div><div class="stat-sub">PHP EQUIV.</div></div>
         <div class="stat-card"><div class="stat-title">ASSET EFFICIENCY</div><div class="stat-value" id="statEfficiency">100%</div><div class="stat-sub">FLEET AVAILABILITY</div></div>
       </div>
-
       <div class="two-columns">
         <div class="form-card">
           <h3>ADD ASSET ENTRY</h3>
-          <div class="form-row">
-            <label>Part Number *</label>
-            <input id="newPartNo" placeholder="Part Number">
-          </div>
-          <div class="form-row">
-            <label>Part Name *</label>
-            <input id="newPartName" placeholder="Part Name">
-          </div>
-          <div class="form-row">
-            <label>Category</label>
-            <select id="newCategory">
-              <option>Kobelco Parts</option><option>Shantui Parts</option><option>Sakai Parts</option><option>Trime Parts</option><option>Non-Core Products</option>
-            </select>
-          </div>
-          <div class="form-row">
-            <label>Quantity</label>
-            <input id="newQty" type="number" value="0">
-          </div>
-          <div class="form-row">
-            <label>Price (₱)</label>
-            <input id="newPrice" type="number" step="0.01" value="0.00">
-          </div>
-          <div class="form-row">
-            <label>Low Stock Threshold</label>
-            <input id="newThreshold" type="number" value="5">
-          </div>
+          <div class="form-row"><label>Part Number *</label><input id="newPartNo" placeholder="Part Number"></div>
+          <div class="form-row"><label>Part Name *</label><input id="newPartName" placeholder="Part Name"></div>
+          <div class="form-row"><label>Category</label><select id="newCategory"><option>Kobelco Parts</option><option>Shantui Parts</option><option>Sakai Parts</option><option>Trime Parts</option><option>Non-Core Products</option></select></div>
+          <div class="form-row"><label>Quantity</label><input id="newQty" type="number" value="0"></div>
+          <div class="form-row"><label>Price (₱)</label><input id="newPrice" type="number" step="0.01" value="0.00"></div>
+          <div class="form-row"><label>Low Stock Threshold</label><input id="newThreshold" type="number" value="5"></div>
           <button id="addPartBtn" class="btn-primary">COMMIT ENTRY</button>
           <div id="addError" style="color:#b91c1c; font-size:0.8rem; margin-top:0.5rem;"></div>
         </div>
-
         <div class="alerts-card">
           <h3>RESTOCK ALERT</h3>
           <div id="restockAlertsContainer">Loading...</div>
@@ -485,7 +519,6 @@
           <div class="supplier-item"><span class="supplier-name">KD HAMMERS</span><div class="reliability">Hydraulic Hammers</div><span class="badge badge-green">ACTIVE</span></div>
         </div>
       </div>
-
       <div class="branch-tabs" id="branchTabs"></div>
       <div style="background:#fefefe; border:1px solid #acaa93; border-radius:0.75rem; padding:1rem; margin-top:1rem;">
         <h3>ASSET WAREHOUSE REGISTRY</h3>
@@ -525,7 +558,7 @@
             <button id="importCsvBtn" class="btn-sm">Import CSV</button>
           </div>
         </div>
-        <div class="overflow-auto"><table class="data-table"><thead><th>Part#</th><th>Name</th><th>Qty</th><th>Price</th><th>Threshold</th><th>Status</th><th>Actions</th></thead><tbody id="branchTbody"></tbody></table></div>
+        <div class="overflow-auto"><table class="data-table"><thead><th>Part#</th><th>Name</th><th>Qty</th><th>Price</th><th>Threshold</th><th>Status</th><th>Actions</th></thead><tbody id="branchTbody"></tbody><tr></div>
       </div>
     `;
     const tbody = document.getElementById("branchTbody");
@@ -541,12 +574,15 @@
       row.insertCell(4).innerText = item.threshold;
       row.insertCell(5).innerHTML = badge;
       let actions = `<button class="editThresh" data-id="${item.id}">✏️</button>`;
-      if(isAdmin) actions += ` <button class="deletePart" data-id="${item.id}">🗑️</button>`;
+      // Admin delete only for full access users
+      if (allowedViews.includes("parts") && (currentUser.email === "adminrom@equiprime.ph" || currentUser.email === "admindex@equiprime.ph")) {
+        actions += ` <button class="deletePart" data-id="${item.id}">🗑️</button>`;
+      }
       row.insertCell(6).innerHTML = actions;
     });
     document.querySelectorAll(".incQty").forEach(btn => btn.onclick = () => modifyQty(btn.dataset.id, 1));
     document.querySelectorAll(".decQty").forEach(btn => btn.onclick = () => modifyQty(btn.dataset.id, -1));
-    if(isAdmin) {
+    if (currentUser && (currentUser.email === "adminrom@equiprime.ph" || currentUser.email === "admindex@equiprime.ph")) {
       document.querySelectorAll(".editThresh").forEach(btn => btn.onclick = () => editThreshold(btn.dataset.id));
       document.querySelectorAll(".deletePart").forEach(btn => btn.onclick = () => { if(confirm("Delete part permanently?")) db.collection("inventory").doc(btn.dataset.id).delete(); });
     }
@@ -624,14 +660,16 @@
     reader.readAsText(file);
   }
 
-  // ========== OTHER VIEWS (simplified but functional) ==========
-  async function renderMachinesView(container) {
+  // ========== MACHINES LOG VIEW (full) ==========
+  async function renderMachinesView() {
+    const container = document.getElementById("dynamicContent");
     container.innerHTML = `<div style="background:#fefefe; border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><h3>Machines Log</h3><div id="machinesContent">Loading...</div></div>`;
-    let html = `<div class="flex"><input id="machineBrand" placeholder="Brand"><input id="machineModel" placeholder="Model"><input id="machineSerial" placeholder="Serial"><input type="date" id="machineArrival"><button id="addMachineBtn" class="btn-primary">Add Machine</button></div><div id="recentSoldList"></div><table class="data-table"><thead><th>Brand</th><th>Model</th><th>Serial</th><th>Status</th><th>Client</th><th>Actions</th></thead><tbody id="machinesTbody"></tbody></table>`;
+    let html = `<div class="flex"><input id="machineBrand" placeholder="Brand"><input id="machineModel" placeholder="Model"><input id="machineSerial" placeholder="Serial"><input type="date" id="machineArrival"><button id="addMachineBtn" class="btn-primary">Add Machine</button></div><div id="recentSoldList"></div><table class="data-table"><thead><th>Brand</th><th>Model</th><th>Serial</th><th>Arrival</th><th>Status</th><th>Client</th><th>Departure</th><th>Free Parts</th><th>No Free PM</th><th>Receipt</th><th>Actions</th></thead><tbody id="machinesTbody"></tbody></table>`;
     document.getElementById("machinesContent").innerHTML = html;
     renderMachinesTable();
     document.getElementById("addMachineBtn").onclick = addMachine;
   }
+
   async function renderMachinesTable() {
     const tbody = document.getElementById("machinesTbody");
     if(!tbody) return;
@@ -641,78 +679,254 @@
       row.insertCell(0).innerText = m.brand||"";
       row.insertCell(1).innerText = m.model||"";
       row.insertCell(2).innerText = m.serial||"";
-      row.insertCell(3).innerHTML = m.status==="AVAILABLE"?"AVAILABLE":"SOLD";
-      row.insertCell(4).innerText = m.client||"-";
+      row.insertCell(3).innerText = m.arrival||"";
+      row.insertCell(4).innerHTML = m.status==="AVAILABLE"?"<span class='badge badge-green'>AVAILABLE</span>":"<span class='badge badge-red'>SOLD</span>";
+      row.insertCell(5).innerText = m.client||"-";
+      row.insertCell(6).innerText = m.departure||"-";
+      row.insertCell(7).innerText = m.freeParts||"";
+      row.insertCell(8).innerHTML = m.noFreePM?"✅ No free PM":"❌";
+      row.insertCell(9).innerHTML = m.receiptDataURL ? `<a href="${m.receiptDataURL}" target="_blank">View</a>` : "None";
       let actions = "";
-      if(isAdmin) actions = `<button class="deleteMachine" data-id="${m.id}">Delete</button>`;
-      row.insertCell(5).innerHTML = actions;
+      if (allowedViews.includes("machines")) {
+        actions = `<button class="deleteMachine" data-id="${m.id}">Delete</button>`;
+        if(m.status==="AVAILABLE") actions += ` <button class="markSoldBtn" data-id="${m.id}">Mark Sold</button>`;
+      }
+      row.insertCell(10).innerHTML = actions;
     });
-    if(isAdmin) {
-      document.querySelectorAll(".deleteMachine").forEach(btn => btn.onclick = () => db.collection("machines").doc(btn.dataset.id).delete());
+    if (allowedViews.includes("machines")) {
+      document.querySelectorAll(".deleteMachine").forEach(btn => btn.onclick = () => { if(confirm("Delete machine?")) db.collection("machines").doc(btn.dataset.id).delete(); });
+      document.querySelectorAll(".markSoldBtn").forEach(btn => btn.onclick = () => openSoldModal(btn.dataset.id));
+    }
+    const sold = allMachines.filter(m => m.status==="SOLD" && m.departure).sort((a,b)=>new Date(b.departure)-new Date(a.departure)).slice(0,5);
+    const container = document.getElementById("recentSoldList");
+    if(container) {
+      if(sold.length) container.innerHTML = `<h4>Recently Sold</h4><ul>${sold.map(m=>`<li>${m.brand} ${m.model} (${m.serial}) → ${m.client} on ${m.departure}</li>`).join("")}</ul>`;
+      else container.innerHTML = "<p>No recent sales</p>";
     }
   }
+
   async function addMachine() {
     const brand = document.getElementById("machineBrand").value.trim();
     const model = document.getElementById("machineModel").value.trim();
     const serial = document.getElementById("machineSerial").value.trim();
     if(!brand || !model || !serial) { alert("Brand, Model, Serial required"); return; }
-    await db.collection("machines").add({ brand, model, serial, status: "AVAILABLE", client: "" });
+    await db.collection("machines").add({
+      brand, model, serial,
+      arrival: document.getElementById("machineArrival").value,
+      freeParts: "",
+      noFreePM: false,
+      status: "AVAILABLE", client: "", departure: "", receiptDataURL: "",
+      timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    document.getElementById("machineBrand").value="";
+    document.getElementById("machineModel").value="";
+    document.getElementById("machineSerial").value="";
   }
 
-  function renderSuppliersView(container) {
-    container.innerHTML = `<div style="background:#fefefe; border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><h3>Active Suppliers / Brands</h3><div>SHANTUI, SAKAI, TRIME, BHI, KD HAMMERS</div></div>`;
-  }
-  function renderKPIView(container) {
-    container.innerHTML = `<div style="background:#fefefe; border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><h3>KPI Reports</h3><select id="kpiMonths"><option value="2">2 months</option><option value="3">3 months</option></select><button id="generateKpiBtn" class="btn-primary">Download CSV</button></div>`;
-    document.getElementById("generateKpiBtn").onclick = () => {
-      const months = parseInt(document.getElementById("kpiMonths").value);
-      const start = new Date(); start.setMonth(start.getMonth()-months);
-      let inTotal=0, outTotal=0;
-      allTransactions.forEach(tx => {
-        if(tx.timestamp && new Date(tx.timestamp)>=start) {
-          if(tx.type==="in") inTotal+=tx.quantity;
-          else outTotal+=tx.quantity;
-        }
-      });
-      const csv = `Metric,Value\nTotal IN,${inTotal}\nTotal OUT,${outTotal}\nNet,${inTotal-outTotal}`;
-      const blob = new Blob(["\uFEFF"+csv], {type:"text/csv"});
-      const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`KPI_${months}months.csv`; a.click();
+  function openSoldModal(machineId) {
+    const machine = allMachines.find(m=>m.id===machineId);
+    if(!machine) return;
+    const modal = document.createElement("div"); modal.className = "modal";
+    modal.innerHTML = `<div class="modal-content"><h3>Mark SOLD: ${machine.brand} ${machine.model}</h3>
+      <label>Client *</label><input type="text" id="soldClient"><br>
+      <label>Departure Date *</label><input type="date" id="soldDate"><br>
+      <label>Receipt *</label><input type="file" id="soldReceipt" accept="image/*,application/pdf"><br>
+      <div class="flex"><button id="confirmSoldBtn" class="btn-primary">Confirm</button><button id="cancelSoldBtn" class="btn-sm">Cancel</button></div></div>`;
+    document.body.appendChild(modal);
+    document.getElementById("cancelSoldBtn").onclick = () => modal.remove();
+    document.getElementById("confirmSoldBtn").onclick = async () => {
+      const client = document.getElementById("soldClient").value.trim();
+      const departure = document.getElementById("soldDate").value;
+      const file = document.getElementById("soldReceipt").files[0];
+      if(!client || !departure || !file) { alert("All fields required"); return; }
+      const receiptDataURL = await readFileAsDataURL(file);
+      await db.collection("machines").doc(machineId).update({ status: "SOLD", client, departure, receiptDataURL });
+      modal.remove();
     };
   }
-  function renderMovementView(container) {
-    container.innerHTML = `<div style="background:#fefefe; border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><h3>Slow/Fast Moving Parts</h3><div id="movementTable"></div></div>`;
+
+  // ========== SUPPLIER TRACKING (static) ==========
+  function renderSuppliersView() {
+    document.getElementById("dynamicContent").innerHTML = `
+      <div style="background:#fefefe; border:1px solid #acaa93; border-radius:1rem; padding:1rem;">
+        <h3>Active Suppliers / Brands</h3>
+        <div class="supplier-item"><span class="supplier-name">SHANTUI</span><div class="reliability">Machines & Parts</div><span class="badge badge-green">ACTIVE</span></div>
+        <div class="supplier-item"><span class="supplier-name">SAKAI</span><div class="reliability">Compaction Equipment</div><span class="badge badge-green">ACTIVE</span></div>
+        <div class="supplier-item"><span class="supplier-name">TRIME</span><div class="reliability">Lighting Towers</div><span class="badge badge-green">ACTIVE</span></div>
+        <div class="supplier-item"><span class="supplier-name">BHI</span><div class="reliability">Breakers & Attachments</div><span class="badge badge-green">ACTIVE</span></div>
+        <div class="supplier-item"><span class="supplier-name">KD HAMMERS</span><div class="reliability">Hydraulic Hammers</div><span class="badge badge-green">ACTIVE</span></div>
+      </div>
+    `;
+  }
+
+  // ========== KPI REPORTS ==========
+  function renderKPIView() {
+    const container = document.getElementById("dynamicContent");
+    container.innerHTML = `
+      <div style="border:1px solid #acaa93; border-radius:1rem; padding:1rem;">
+        <h3>KPI Reports</h3>
+        <div class="flex"><label>Period: <select id="kpiMonths"><option value="2">2 months</option><option value="3">3 months</option></select></label><button id="generateKpiBtn" class="btn-primary">Download CSV</button></div>
+      </div>
+    `;
+    document.getElementById("generateKpiBtn").onclick = () => {
+      const months = parseInt(document.getElementById("kpiMonths").value);
+      const startDate = new Date(); startDate.setMonth(startDate.getMonth() - months);
+      let inTotal = 0, outTotal = 0;
+      const prodIn = {}, prodOut = {};
+      allTransactions.forEach(tx => {
+        if(tx.timestamp && new Date(tx.timestamp) >= startDate) {
+          if(tx.type === "in") { inTotal += tx.quantity; prodIn[tx.productName] = (prodIn[tx.productName]||0) + tx.quantity; }
+          else { outTotal += tx.quantity; prodOut[tx.productName] = (prodOut[tx.productName]||0) + tx.quantity; }
+        }
+      });
+      const topIn = Object.entries(prodIn).sort((a,b)=>b[1]-a[1])[0] || ["None",0];
+      const topOut = Object.entries(prodOut).sort((a,b)=>b[1]-a[1])[0] || ["None",0];
+      const csvRows = [
+        ["Metric","Value"],
+        [`Period (last ${months} months)`,""],
+        ["Total IN (units)", inTotal],
+        ["Total OUT (units)", outTotal],
+        ["Net Change", inTotal-outTotal],
+        ["Top IN Product", `${topIn[0]} (${topIn[1]})`],
+        ["Top OUT Product", `${topOut[0]} (${topOut[1]})`]
+      ];
+      const csv = csvRows.map(r => r.join(",")).join("\n");
+      const blob = new Blob(["\uFEFF"+csv], {type:"text/csv"});
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `KPI_${months}months.csv`; a.click();
+    };
+  }
+
+  // ========== SLOW/FAST MOVING ==========
+  function renderMovementView() {
+    const container = document.getElementById("dynamicContent");
+    container.innerHTML = `
+      <div style="border:1px solid #acaa93; border-radius:1rem; padding:1rem;">
+        <h3>Fast Moving Parts (Top 5 – last 3 months)</h3>
+        <div id="fastMovingList"></div>
+        <h3>All Parts Movement</h3>
+        <div id="movementTable"></div>
+      </div>
+    `;
     updateFastMovingAndMovement();
   }
+
   function updateFastMovingAndMovement() {
     const threeMonthsAgo = new Date(); threeMonthsAgo.setMonth(threeMonthsAgo.getMonth()-3);
     const consumption = {};
     allTransactions.forEach(tx => {
-      if(tx.type==="out" && tx.timestamp && new Date(tx.timestamp)>=threeMonthsAgo) {
+      if(tx.type === "out" && tx.timestamp && new Date(tx.timestamp) >= threeMonthsAgo) {
         consumption[tx.productId] = (consumption[tx.productId]||0) + tx.quantity;
       }
     });
-    let html = "<table class='data-table'><thead><th>Part#</th><th>Name</th><th>OUT (3mo)</th><th>Class</th></thead><tbody>";
-    allInventory.forEach(item => {
-      const used = consumption[item.id] || 0;
-      let cls = used===0?"SLOW":(used<5?"SLOW":"FAST");
-      html += `<tr><tr>${item.partNo}</td><td>${item.name}</td><td>${used}</td><td>${cls}</td></tr>`;
+    const partsWithOut = allInventory.map(item => ({ ...item, outQty: consumption[item.id] || 0 }));
+    const fastMoving = [...partsWithOut].sort((a,b)=>b.outQty - a.outQty).slice(0,5);
+    const fastHtml = fastMoving.length ? "<table class='data-table'><thead><th>Part#</th><th>Name</th><th>OUT (3mo)</th></thead><tbody>" + fastMoving.map(p => `<tr><td>${p.partNo}</td><td>${p.name}</td><td>${p.outQty}</td></tr>`).join("") + "</tbody></table>" : "<p>No movement data yet.</p>";
+    document.getElementById("fastMovingList").innerHTML = fastHtml;
+    let fullHtml = "<table class='data-table'><thead><th>Part#</th><th>Name</th><th>OUT (3mo)</th><th>Classification</th></thead><tbody>";
+    partsWithOut.forEach(item => {
+      let classification = "NORMAL";
+      if(item.outQty === 0) classification = "SLOW (no movement)";
+      else if(item.outQty < 5) classification = "SLOW";
+      else classification = "FAST MOVING";
+      fullHtml += `<tr><td>${item.partNo}</td><td>${item.name}</td><td>${item.outQty}</td><td><strong>${classification}</strong></td></tr>`;
     });
-    html += "</tbody></table>";
-    document.getElementById("movementTable").innerHTML = html;
+    fullHtml += "</tbody></table>";
+    document.getElementById("movementTable").innerHTML = fullHtml;
   }
-  function renderUploadsView(container) {
-    container.innerHTML = `<div style="background:#fefefe; border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><h3>Parts Uploads</h3><div>Upload functionality preserved (see previous version).</div></div>`;
+
+  // ========== PARTS UPLOADS ==========
+  function renderUploadsView() {
+    const container = document.getElementById("dynamicContent");
+    container.innerHTML = `
+      <div style="border:1px solid #acaa93; border-radius:1rem; padding:1rem;">
+        <h3>Parts Delivery Receipt (OUT)</h3>
+        <div class="flex"><select id="outPartSelect"></select><input id="outQty" type="number" placeholder="Qty"><input type="file" id="outReceiptFile" accept="image/*,application/pdf"><button id="uploadOutBtn" class="btn-primary">Record OUT</button></div>
+        <hr><h3>Purchase Order (IN)</h3>
+        <div class="flex"><select id="inPartSelect"></select><input id="inQty" type="number" placeholder="Qty"><input id="supplierName" placeholder="Supplier"><input id="poNumber" placeholder="PO #"><input type="date" id="poDate"><input type="file" id="poFile" accept="image/*,application/pdf"><button id="uploadInBtn" class="btn-primary">Record IN</button></div>
+        <hr><h4>Uploaded Files History</h4><div id="uploadsList"></div>
+      </div>
+    `;
+    refreshPartSelectors();
+    document.getElementById("uploadOutBtn").onclick = uploadOut;
+    document.getElementById("uploadInBtn").onclick = uploadIn;
+    renderUploadsList();
   }
-  function renderBackupView(container) {
-    container.innerHTML = `<div style="background:#fefefe; border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><button id="exportFullDataBtn" class="btn-primary">Export Backup</button><br><br><input type="file" id="importFileInput" accept=".json"><button id="importFullDataBtn" class="btn-primary">Restore</button></div>`;
+
+  async function refreshPartSelectors() {
+    let opts = '<option value="">Select part</option>';
+    allInventory.forEach(i => opts += `<option value="${i.id}">${i.partNo} - ${i.name}</option>`);
+    document.getElementById("outPartSelect").innerHTML = opts;
+    document.getElementById("inPartSelect").innerHTML = opts;
+  }
+
+  async function readFileAsDataURL(file) {
+    return new Promise(resolve => { const r = new FileReader(); r.onload = () => resolve(r.result); r.readAsDataURL(file); });
+  }
+
+  async function uploadOut() {
+    const partId = document.getElementById("outPartSelect").value;
+    const qty = parseInt(document.getElementById("outQty").value);
+    const file = document.getElementById("outReceiptFile").files[0];
+    if(!partId || !qty || !file) return alert("Select part, qty, file");
+    const item = allInventory.find(i=>i.id===partId);
+    if(!item) return;
+    if(item.qty < qty) return alert("Not enough stock");
+    await db.collection("inventory").doc(partId).update({ qty: item.qty - qty });
+    const fileDataURL = await readFileAsDataURL(file);
+    await db.collection("uploads").add({ type: "delivery_receipt", productId: partId, partNo: item.partNo, quantity: qty, fileDataURL, fileName: file.name, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+    await db.collection("transactions").add({ productId: partId, partNo: item.partNo, productName: item.name, type: "out", quantity: qty, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+    alert("OUT recorded");
+  }
+
+  async function uploadIn() {
+    const partId = document.getElementById("inPartSelect").value;
+    const qty = parseInt(document.getElementById("inQty").value);
+    const supplier = document.getElementById("supplierName").value.trim();
+    const poNum = document.getElementById("poNumber").value.trim();
+    const poDate = document.getElementById("poDate").value;
+    const file = document.getElementById("poFile").files[0];
+    if(!partId || !qty || !supplier || !poNum || !file) return alert("Fill all fields");
+    const item = allInventory.find(i=>i.id===partId);
+    if(!item) return;
+    await db.collection("inventory").doc(partId).update({ qty: item.qty + qty });
+    const fileDataURL = await readFileAsDataURL(file);
+    await db.collection("uploads").add({ type: "purchase_order", productId: partId, partNo: item.partNo, quantity: qty, supplier, poNumber: poNum, poDate, fileDataURL, fileName: file.name, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+    await db.collection("transactions").add({ productId: partId, partNo: item.partNo, productName: item.name, type: "in", quantity: qty, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+    alert("IN recorded");
+  }
+
+  function renderUploadsList() {
+    let html = "";
+    allUploads.forEach(u => {
+      if(u.type === "delivery_receipt") {
+        html += `<div>📄 Delivery Receipt: ${u.partNo} (Qty ${u.quantity}) - <a href="${u.fileDataURL}" target="_blank">View</a> ${(currentUser.email === "adminrom@equiprime.ph" || currentUser.email === "admindex@equiprime.ph") ? `<button class="deleteUpload" data-id="${u.id}">Delete</button>` : ''}</div>`;
+      } else {
+        html += `<div>📑 PO #${u.poNumber} (${u.supplier}) for ${u.partNo} Qty ${u.quantity} - <a href="${u.fileDataURL}" target="_blank">View</a> ${(currentUser.email === "adminrom@equiprime.ph" || currentUser.email === "admindex@equiprime.ph") ? `<button class="deleteUpload" data-id="${u.id}">Delete</button>` : ''}</div>`;
+      }
+    });
+    document.getElementById("uploadsList").innerHTML = html;
+    if(currentUser && (currentUser.email === "adminrom@equiprime.ph" || currentUser.email === "admindex@equiprime.ph")) {
+      document.querySelectorAll(".deleteUpload").forEach(btn => btn.onclick = () => { if(confirm("Delete upload?")) db.collection("uploads").doc(btn.dataset.id).delete(); });
+    }
+  }
+
+  // ========== BACKUP / RESTORE ==========
+  function renderBackupView() {
+    const container = document.getElementById("dynamicContent");
+    container.innerHTML = `
+      <div style="border:1px solid #acaa93; border-radius:1rem; padding:1rem;">
+        <button id="exportFullDataBtn" class="btn-primary">Export Full Backup (JSON)</button><br><br>
+        <input type="file" id="importFileInput" accept=".json"><button id="importFullDataBtn" class="btn-primary">Restore from Backup (merge)</button>
+      </div>
+    `;
     document.getElementById("exportFullDataBtn").onclick = () => {
-      const allData = { inventory: allInventory, machines: allMachines, transactions: allTransactions, uploads: allUploads };
+      const allData = { inventory: allInventory, machines: allMachines, transactions: allTransactions, uploads: allUploads, drSalesOrders: allDRRecords };
       const blob = new Blob([JSON.stringify(allData)], {type:"application/json"});
-      const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="backup.json"; a.click();
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "equiprime_full_backup.json"; a.click();
     };
     document.getElementById("importFullDataBtn").onclick = () => {
       const file = document.getElementById("importFileInput").files[0];
-      if(!file) return alert("Select file");
+      if(!file) return alert("Select a backup file");
       const reader = new FileReader();
       reader.onload = async e => {
         const data = JSON.parse(e.target.result);
@@ -720,12 +934,194 @@
         if(data.machines) for(let m of data.machines) await db.collection("machines").add(m);
         if(data.transactions) for(let t of data.transactions) await db.collection("transactions").add(t);
         if(data.uploads) for(let u of data.uploads) await db.collection("uploads").add(u);
-        alert("Restored");
+        if(data.drSalesOrders) for(let d of data.drSalesOrders) await db.collection("dr_sales_orders").add(d);
+        alert("Restored (merged)");
       };
       reader.readAsText(file);
     };
   }
 
+  // ========== DELIVERY RECEIPT & SALES ORDER TAB ==========
+  function renderDRView() {
+    const container = document.getElementById("dynamicContent");
+    container.innerHTML = `
+      <div class="sub-tabs">
+        <button class="sub-tab-btn ${currentDRSubTab === 'north_luzon_pms' ? 'active' : ''}" data-subtab="north_luzon_pms">North Luzon PMS</button>
+        <button class="sub-tab-btn ${currentDRSubTab === 'monitoring_dr' ? 'active' : ''}" data-subtab="monitoring_dr">Monitoring of DR</button>
+      </div>
+      <div id="drContent"></div>
+    `;
+    document.querySelectorAll(".sub-tab-btn").forEach(btn => {
+      btn.onclick = () => {
+        currentDRSubTab = btn.getAttribute("data-subtab");
+        renderDRSubTab();
+        document.querySelectorAll(".sub-tab-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+      };
+    });
+    renderDRSubTab();
+  }
+
+  function renderDRSubTab() {
+    const records = allDRRecords.filter(r => r.type === currentDRSubTab);
+    const container = document.getElementById("drContent");
+    container.innerHTML = `
+      <div style="border:1px solid #acaa93; border-radius:0.75rem; padding:1rem;">
+        <div class="flex" style="justify-content:space-between; margin-bottom:1rem;">
+          <button id="addDRRecordBtn" class="btn-sm">➕ Add Record</button>
+          <div>
+            <input type="file" id="drCsvFile" accept=".csv" style="display:inline; width:auto;">
+            <button id="importDRCsvBtn" class="btn-sm">Import CSV</button>
+            <button id="exportDRCsvBtn" class="btn-sm">Export CSV</button>
+          </div>
+        </div>
+        <div class="overflow-auto">
+          <table class="data-table">
+            <thead><tr><th>Date</th><th>Customer</th><th>Brand</th><th>Model</th><th>Serial</th><th>Job Description</th><th>Details</th><th>DR-Released to</th><th>DR-Returned to</th><th>Remarks/Status</th><th>Completion Date</th><th>Actions</th></tr></thead>
+            <tbody id="drTbody"></tbody>
+          </table>
+        </div>
+      </div>
+    `;
+    const tbody = document.getElementById("drTbody");
+    tbody.innerHTML = "";
+    records.forEach(record => {
+      const row = tbody.insertRow();
+      row.insertCell(0).innerText = record.date || "";
+      row.insertCell(1).innerText = record.customer || "";
+      row.insertCell(2).innerText = record.brand || "";
+      row.insertCell(3).innerText = record.model || "";
+      row.insertCell(4).innerText = record.serial || "";
+      row.insertCell(5).innerText = record.jobDescription || "";
+      row.insertCell(6).innerText = record.details || "";
+      row.insertCell(7).innerText = record.drReleasedTo || "";
+      row.insertCell(8).innerText = record.drReturnedTo || "";
+      row.insertCell(9).innerText = record.remarks || "";
+      row.insertCell(10).innerText = record.completionDate || "";
+      const actions = `<button class="deleteDRRecord" data-id="${record.id}">🗑️</button>`;
+      row.insertCell(11).innerHTML = actions;
+    });
+    document.querySelectorAll(".deleteDRRecord").forEach(btn => btn.onclick = () => {
+      if(confirm("Delete this record?")) db.collection("dr_sales_orders").doc(btn.dataset.id).delete();
+    });
+    document.getElementById("addDRRecordBtn").onclick = () => openDRModal();
+    document.getElementById("importDRCsvBtn").onclick = () => importDRCSV();
+    document.getElementById("exportDRCsvBtn").onclick = () => exportDRCSV();
+  }
+
+  function openDRModal(record = null) {
+    const modal = document.createElement("div"); modal.className = "modal";
+    modal.innerHTML = `
+      <div class="modal-content">
+        <h3>${record ? 'Edit Record' : 'Add New Record'}</h3>
+        <div class="form-row"><label>Date</label><input type="date" id="drDate" value="${record?.date || ''}"></div>
+        <div class="form-row"><label>Customer</label><input id="drCustomer" value="${record?.customer || ''}"></div>
+        <div class="form-row"><label>Brand</label><input id="drBrand" value="${record?.brand || ''}"></div>
+        <div class="form-row"><label>Model</label><input id="drModel" value="${record?.model || ''}"></div>
+        <div class="form-row"><label>Serial</label><input id="drSerial" value="${record?.serial || ''}"></div>
+        <div class="form-row"><label>Job Description</label><input id="drJobDesc" value="${record?.jobDescription || ''}"></div>
+        <div class="form-row"><label>Details</label><input id="drDetails" value="${record?.details || ''}"></div>
+        <div class="form-row"><label>DR-Released to</label><input id="drReleasedTo" value="${record?.drReleasedTo || ''}"></div>
+        <div class="form-row"><label>DR-Returned to</label><input id="drReturnedTo" value="${record?.drReturnedTo || ''}"></div>
+        <div class="form-row"><label>Remarks/Status</label><input id="drRemarks" value="${record?.remarks || ''}"></div>
+        <div class="form-row"><label>Completion Date</label><input type="date" id="drCompletionDate" value="${record?.completionDate || ''}"></div>
+        <div class="flex" style="margin-top:1rem;">
+          <button id="saveDRModalBtn" class="btn-primary">Save</button>
+          <button id="cancelDRModalBtn" class="btn-sm">Cancel</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    document.getElementById("cancelDRModalBtn").onclick = () => modal.remove();
+    document.getElementById("saveDRModalBtn").onclick = async () => {
+      const data = {
+        type: currentDRSubTab,
+        date: document.getElementById("drDate").value,
+        customer: document.getElementById("drCustomer").value,
+        brand: document.getElementById("drBrand").value,
+        model: document.getElementById("drModel").value,
+        serial: document.getElementById("drSerial").value,
+        jobDescription: document.getElementById("drJobDesc").value,
+        details: document.getElementById("drDetails").value,
+        drReleasedTo: document.getElementById("drReleasedTo").value,
+        drReturnedTo: document.getElementById("drReturnedTo").value,
+        remarks: document.getElementById("drRemarks").value,
+        completionDate: document.getElementById("drCompletionDate").value,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      };
+      if (record) {
+        await db.collection("dr_sales_orders").doc(record.id).update(data);
+      } else {
+        await db.collection("dr_sales_orders").add(data);
+      }
+      modal.remove();
+    };
+  }
+
+  async function importDRCSV() {
+    const file = document.getElementById("drCsvFile").files[0];
+    if (!file) return alert("Select a CSV file");
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const lines = e.target.result.split(/\r?\n/);
+      if (lines.length < 2) return alert("CSV file empty");
+      const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
+      const idx = {
+        date: headers.indexOf("date"),
+        customer: headers.indexOf("customer"),
+        brand: headers.indexOf("brand"),
+        model: headers.indexOf("model"),
+        serial: headers.indexOf("serial"),
+        jobDescription: headers.indexOf("job description"),
+        details: headers.indexOf("details"),
+        drReleasedTo: headers.indexOf("dr-released to"),
+        drReturnedTo: headers.indexOf("dr-returned to"),
+        remarks: headers.indexOf("remarks/status"),
+        completionDate: headers.indexOf("completion date")
+      };
+      let success = 0, fail = 0;
+      for (let i = 1; i < lines.length; i++) {
+        if (!lines[i].trim()) continue;
+        const cols = lines[i].split(",").map(c => c.trim().replace(/^"|"$/g, ''));
+        const record = {
+          type: currentDRSubTab,
+          date: cols[idx.date] || "",
+          customer: cols[idx.customer] || "",
+          brand: cols[idx.brand] || "",
+          model: cols[idx.model] || "",
+          serial: cols[idx.serial] || "",
+          jobDescription: cols[idx.jobDescription] || "",
+          details: cols[idx.details] || "",
+          drReleasedTo: cols[idx.drReleasedTo] || "",
+          drReturnedTo: cols[idx.drReturnedTo] || "",
+          remarks: cols[idx.remarks] || "",
+          completionDate: cols[idx.completionDate] || "",
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        };
+        try {
+          await db.collection("dr_sales_orders").add(record);
+          success++;
+        } catch(e) { fail++; }
+      }
+      alert(`Imported ${success} records, ${fail} failed.`);
+      document.getElementById("drCsvFile").value = "";
+    };
+    reader.readAsText(file);
+  }
+
+  function exportDRCSV() {
+    const records = allDRRecords.filter(r => r.type === currentDRSubTab);
+    const headers = ["Date","Customer","Brand","Model","Serial","Job Description","Details","DR-Released to","DR-Returned to","Remarks/Status","Completion Date"];
+    const rows = records.map(r => [
+      r.date, r.customer, r.brand, r.model, r.serial, r.jobDescription, r.details,
+      r.drReleasedTo, r.drReturnedTo, r.remarks, r.completionDate
+    ]);
+    const csv = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob(["\uFEFF"+csv], {type:"text/csv"});
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `${currentDRSubTab}.csv`; a.click();
+  }
+
+  // Quick report
   document.getElementById("quickReportBtn").onclick = () => {
     const totalVal = allInventory.reduce((s,i)=>s+(i.qty*(i.price||0)),0);
     const lowStock = allInventory.filter(p=>p.qty<=p.threshold && p.qty>0).length;
