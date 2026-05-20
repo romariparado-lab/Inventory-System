@@ -245,10 +245,19 @@
     }
     .login-card {
       background: #fefefe; padding: 2rem; border-radius: 1rem; width: 320px; border: 1px solid #acaa93;
+      text-align: center;
+    }
+    .login-card img {
+      max-width: 100%;
+      height: auto;
+      margin-bottom: 1rem;
+      border-radius: 0.5rem;
     }
     input, select {
       background: #fefefe; border: 1px solid #acaa93; padding: 0.5rem; border-radius: 0.5rem; color: #002a54;
       font-family: 'Poppins', sans-serif;
+      width: 100%;
+      margin-bottom: 0.5rem;
     }
     button { cursor: pointer; }
     .modal {
@@ -290,8 +299,9 @@
 <body>
 <div id="loginContainer" class="login-overlay">
   <div class="login-card">
+    <img src="Inventory System Preview.png" alt="EQUIPRIME LOGO" onerror="this.style.display='none'">
     <h2>EQUIPRIME PRO</h2>
-    <input type="email" id="loginEmail" placeholder="Email" style="margin-bottom:0.5rem;"><br>
+    <input type="email" id="loginEmail" placeholder="Email"><br>
     <input type="password" id="loginPassword" placeholder="Password"><br>
     <button id="loginBtn" class="btn-primary" style="margin-top:1rem; width:100%;">Login</button>
     <button id="signupBtn" style="margin-top:0.5rem; width:100%; background:#acaa93; border:none; padding:0.5rem; border-radius:0.5rem; color:#002a54;">Sign Up</button>
@@ -350,32 +360,25 @@
     setTimeout(() => toast.remove(), 3000);
   }
 
-  // Convert YYYY-MM-DD to MM/DD/YYYY for display
   function toDisplayDate(isoDate) {
     if (!isoDate) return "";
-    let parts = isoDate.split("-");
+    const parts = isoDate.split("-");
     if (parts.length === 3) return `${parts[1]}/${parts[2]}/${parts[0]}`;
     return isoDate;
   }
-  // Convert any input to YYYY-MM-DD for storage
   function toISODate(dateStr) {
     if (!dateStr) return "";
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
-    let parts = dateStr.split(/[\/\-\.]/);
+    const parts = dateStr.split(/[\/\-\.]/);
     if (parts.length === 3) {
-      let year = parts[2];
-      let month = parts[0].padStart(2,'0');
-      let day = parts[1].padStart(2,'0');
-      if (year.length === 4 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-        return `${year}-${month}-${day}`;
-      }
+      let year = parts[2], month = parts[0].padStart(2,'0'), day = parts[1].padStart(2,'0');
+      if (year.length === 4 && month>=1 && month<=12 && day>=1 && day<=31) return `${year}-${month}-${day}`;
     }
-    let d = new Date(dateStr);
+    const d = new Date(dateStr);
     if (!isNaN(d.getTime())) return d.toISOString().slice(0,10);
     return dateStr;
   }
 
-  // ========== ROLE-BASED ACCESS ==========
   const USER_TAB_PERMISSIONS = {
     "adminrom@equiprime.ph": ["parts", "machines", "suppliers", "kpi", "movement", "uploads", "backup", "dr_sales", "users"],
     "admindex@equiprime.ph": ["parts", "machines", "suppliers", "kpi", "movement", "uploads", "backup", "dr_sales", "users"],
@@ -402,40 +405,25 @@
     users: "User Management"
   };
 
-  let currentUser = null;
-  let allowedViews = [];
-  let allInventory = [], allMachines = [], allTransactions = [], allUploads = [], allDRRecords = [], allUsers = [];
+  let currentUser = null, allowedViews = [];
+  let allInventory=[], allMachines=[], allTransactions=[], allUploads=[], allDRRecords=[], allUsers=[];
   let unsubInv, unsubMach, unsubTx, unsubUp, unsubDR, unsubUsers;
-  let currentBranch = "main";
-  let branchUnsub = null;
-  let currentView = "parts";
-  let currentDRSubTab = "north_luzon_pms";
-  let currentMonthFilter = new Date().toISOString().slice(0,7);
+  let currentBranch = "main", branchUnsub = null, currentView = "parts", currentDRSubTab = "north_luzon_pms", currentMonthFilter = new Date().toISOString().slice(0,7);
 
-  // Login with Enter key
   const loginEmail = document.getElementById("loginEmail");
   const loginPassword = document.getElementById("loginPassword");
-  loginEmail.addEventListener("keypress", (e) => { if (e.key === "Enter") document.getElementById("loginBtn").click(); });
-  loginPassword.addEventListener("keypress", (e) => { if (e.key === "Enter") document.getElementById("loginBtn").click(); });
+  loginEmail.addEventListener("keypress", e => { if (e.key === "Enter") document.getElementById("loginBtn").click(); });
+  loginPassword.addEventListener("keypress", e => { if (e.key === "Enter") document.getElementById("loginBtn").click(); });
 
   document.getElementById("loginBtn").onclick = async () => {
-    const email = loginEmail.value;
-    const pwd = loginPassword.value;
-    try {
-      await auth.signInWithEmailAndPassword(email, pwd);
-    } catch(e) { showToast("Login error: "+e.message, true); }
+    try { await auth.signInWithEmailAndPassword(loginEmail.value, loginPassword.value); }
+    catch(e) { showToast("Login error: "+e.message, true); }
   };
   document.getElementById("signupBtn").onclick = async () => {
-    const email = loginEmail.value;
-    const pwd = loginPassword.value;
     try {
-      const userCred = await auth.createUserWithEmailAndPassword(email, pwd);
-      await db.collection("users").doc(userCred.user.uid).set({
-        email: email,
-        approved: false,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      showToast("Sign-up successful! Please wait for admin approval.");
+      const cred = await auth.createUserWithEmailAndPassword(loginEmail.value, loginPassword.value);
+      await db.collection("users").doc(cred.user.uid).set({ email: loginEmail.value, approved: false, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+      showToast("Sign-up successful! Wait for admin approval.");
     } catch(e) { showToast("Signup error: "+e.message, true); }
   };
   document.getElementById("logoutBtn").onclick = () => auth.signOut();
@@ -447,15 +435,13 @@
       const userDoc = await db.collection("users").doc(user.uid).get();
       const approved = userDoc.exists ? userDoc.data().approved : false;
       const isAdmin = email === "adminrom@equiprime.ph" || email === "admindex@equiprime.ph";
-      if (!approved && !isAdmin) {
-        showToast("Your account is pending approval. View only.");
-      }
+      if (!approved && !isAdmin) showToast("Pending approval – view only.");
       allowedViews = USER_TAB_PERMISSIONS[email] || DEFAULT_VIEWS;
       document.getElementById("loginContainer").style.display = "none";
       document.getElementById("appContainer").style.display = "flex";
       buildNavigation();
       startGlobalListeners();
-      if (allowedViews.length > 0) loadView(allowedViews[0]);
+      if (allowedViews.length) loadView(allowedViews[0]);
       else showToast("No access. Contact admin.", true);
     } else {
       document.getElementById("loginContainer").style.display = "flex";
@@ -475,60 +461,31 @@
         if (view === currentView) navItem.classList.add("active");
         navItem.textContent = VIEW_DISPLAY_NAMES[view];
         navItem.setAttribute("data-view", view);
-        navItem.onclick = () => {
-          loadView(view);
-          document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
-          navItem.classList.add("active");
-        };
+        navItem.onclick = () => { loadView(view); document.querySelectorAll(".nav-item").forEach(n=>n.classList.remove("active")); navItem.classList.add("active"); };
         navMenu.appendChild(navItem);
       }
     }
   }
 
   function startGlobalListeners() {
-    unsubInv = db.collection("inventory").onSnapshot(snapshot => {
-      allInventory = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      if (currentView === "parts") renderPartsView();
-      if (currentView === "movement") renderMovementView();
-      updateDashboardStats();
-    });
-    unsubMach = db.collection("machines").onSnapshot(snapshot => {
-      allMachines = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      if (currentView === "machines") renderMachinesView();
-      updateDashboardStats();
-    });
-    unsubTx = db.collection("transactions").onSnapshot(snapshot => {
-      allTransactions = snapshot.docs.map(d => d.data());
-      if (currentView === "movement") renderMovementView();
-      if (currentView === "parts") renderPartsView();
-    });
-    unsubUp = db.collection("uploads").onSnapshot(snapshot => {
-      allUploads = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      if (currentView === "uploads") renderUploadsView();
-    });
-    unsubDR = db.collection("dr_sales_orders").onSnapshot(snapshot => {
-      allDRRecords = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      if (currentView === "dr_sales") renderDRView();
-    });
-    if (allowedViews.includes("users")) {
-      unsubUsers = db.collection("users").onSnapshot(snapshot => {
-        allUsers = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-        if (currentView === "users") renderUsersView();
-      });
-    }
+    unsubInv = db.collection("inventory").onSnapshot(snap => { allInventory = snap.docs.map(d=>({id:d.id,...d.data()})); if (currentView==="parts") renderPartsView(); if (currentView==="movement") renderMovementView(); updateDashboardStats(); });
+    unsubMach = db.collection("machines").onSnapshot(snap => { allMachines = snap.docs.map(d=>({id:d.id,...d.data()})); if (currentView==="machines") renderMachinesView(); updateDashboardStats(); });
+    unsubTx = db.collection("transactions").onSnapshot(snap => { allTransactions = snap.docs.map(d=>d.data()); if (currentView==="movement") renderMovementView(); if (currentView==="parts") renderPartsView(); });
+    unsubUp = db.collection("uploads").onSnapshot(snap => { allUploads = snap.docs.map(d=>({id:d.id,...d.data()})); if (currentView==="uploads") renderUploadsView(); });
+    unsubDR = db.collection("dr_sales_orders").onSnapshot(snap => { allDRRecords = snap.docs.map(d=>({id:d.id,...d.data()})); if (currentView==="dr_sales") renderDRView(); });
+    if (allowedViews.includes("users")) unsubUsers = db.collection("users").onSnapshot(snap => { allUsers = snap.docs.map(d=>({id:d.id,...d.data()})); if (currentView==="users") renderUsersView(); });
   }
 
   function updateDashboardStats() {
-    const totalUnits = allInventory.reduce((s,i)=>s + (i.qty||0),0);
-    const lowStockCount = allInventory.filter(i => i.qty <= i.threshold && i.qty>0).length;
-    const totalValue = allInventory.reduce((s,i)=>s + (i.qty * (i.price||0)),0);
-    const availableMachines = allMachines.filter(m => m.status === "AVAILABLE").length;
-    const totalMachines = allMachines.length;
-    const efficiency = totalMachines ? (availableMachines/totalMachines)*100 : 100;
+    const totalUnits = allInventory.reduce((s,i)=>s+(i.qty||0),0);
+    const lowStock = allInventory.filter(i=>i.qty<=i.threshold && i.qty>0).length;
+    const totalValue = allInventory.reduce((s,i)=>s+(i.qty*(i.price||0)),0);
+    const available = allMachines.filter(m=>m.status==="AVAILABLE").length;
+    const efficiency = allMachines.length ? (available/allMachines.length)*100 : 100;
     const statDivs = document.querySelectorAll(".stat-value");
     if(statDivs.length) {
       statDivs[0].innerText = totalUnits;
-      statDivs[1].innerText = lowStockCount;
+      statDivs[1].innerText = lowStock;
       statDivs[2].innerHTML = `₱${totalValue.toLocaleString()}`;
       statDivs[3].innerText = `${Math.round(efficiency)}%`;
     }
@@ -547,13 +504,12 @@
     else if (view === "users") renderUsersView();
   }
 
-  // ========== PARTS INVENTORY (fully functional) ==========
+  // ========== PARTS INVENTORY ==========
   async function renderPartsView() {
     const container = document.getElementById("dynamicContent");
     container.innerHTML = `
       <div class="stats-row" id="partStats"></div>
-      <div class="two-columns">
-        <div class="form-card"><h3>ADD ASSET ENTRY</h3><div class="form-row"><label>Part Number *</label><input id="newPartNo"></div><div class="form-row"><label>Part Name *</label><input id="newPartName"></div><div class="form-row"><label>Category</label><select id="newCategory"><option>Kobelco Parts</option><option>Shantui Parts</option><option>Sakai Parts</option><option>Trime Parts</option><option>Non-Core Products</option></select></div><div class="form-row"><label>Quantity</label><input id="newQty" type="number" value="0"></div><div class="form-row"><label>Price (₱)</label><input id="newPrice" type="number" step="0.01" value="0.00"></div><div class="form-row"><label>Low Stock Threshold</label><input id="newThreshold" type="number" value="5"></div><button id="addPartBtn" class="btn-primary">COMMIT ENTRY</button><div id="addError" style="color:#b91c1c;font-size:0.8rem;"></div></div>
+      <div class="two-columns"><div class="form-card"><h3>ADD ASSET ENTRY</h3><div class="form-row"><label>Part Number *</label><input id="newPartNo"></div><div class="form-row"><label>Part Name *</label><input id="newPartName"></div><div class="form-row"><label>Category</label><select id="newCategory"><option>Kobelco Parts</option><option>Shantui Parts</option><option>Sakai Parts</option><option>Trime Parts</option><option>Non-Core Products</option></select></div><div class="form-row"><label>Quantity</label><input id="newQty" type="number" value="0"></div><div class="form-row"><label>Price (₱)</label><input id="newPrice" type="number" step="0.01" value="0.00"></div><div class="form-row"><label>Low Stock Threshold</label><input id="newThreshold" type="number" value="5"></div><button id="addPartBtn" class="btn-primary">COMMIT ENTRY</button><div id="addError" style="color:#b91c1c;font-size:0.8rem;"></div></div>
         <div class="alerts-card"><h3>RESTOCK ALERT</h3><div id="restockAlertsContainer">Loading...</div><hr><h3>ACTIVE SUPPLIERS</h3><div class="supplier-item"><span class="supplier-name">SHANTUI</span><div class="reliability">Machines & Parts</div><span class="badge badge-green">ACTIVE</span></div><div class="supplier-item"><span class="supplier-name">SAKAI</span><div class="reliability">Compaction Equipment</div><span class="badge badge-green">ACTIVE</span></div><div class="supplier-item"><span class="supplier-name">TRIME</span><div class="reliability">Lighting Towers</div><span class="badge badge-green">ACTIVE</span></div><div class="supplier-item"><span class="supplier-name">BHI</span><div class="reliability">Breakers & Attachments</div><span class="badge badge-green">ACTIVE</span></div><div class="supplier-item"><span class="supplier-name">KD HAMMERS</span><div class="reliability">Hydraulic Hammers</div><span class="badge badge-green">ACTIVE</span></div></div>
       </div>
       <div class="branch-tabs" id="branchTabs"></div>
@@ -572,25 +528,20 @@
     renderRestockAlerts();
     document.getElementById("addPartBtn").onclick = addPartToBranch;
   }
-
   async function updatePartStats() {
     const start = new Date(currentMonthFilter+"-01"), end = new Date(start.getFullYear(), start.getMonth()+1, 0);
-    let inTotal=0, outTotal=0;
-    allTransactions.forEach(tx => { if(tx.timestamp && new Date(tx.timestamp)>=start && new Date(tx.timestamp)<=end) tx.type==="in"? inTotal+=tx.quantity : outTotal+=tx.quantity; });
-    document.getElementById("partStats").innerHTML = `<div class="stat-card"><div class="stat-title">MONTHLY IN</div><div class="stat-value">${inTotal}</div></div><div class="stat-card"><div class="stat-title">MONTHLY OUT</div><div class="stat-value">${outTotal}</div></div><div class="stat-card"><div class="stat-title">MONTHLY NET</div><div class="stat-value">${inTotal-outTotal}</div></div>`;
+    let inT=0, outT=0;
+    allTransactions.forEach(tx => { if(tx.timestamp && new Date(tx.timestamp)>=start && new Date(tx.timestamp)<=end) tx.type==="in"? inT+=tx.quantity : outT+=tx.quantity; });
+    document.getElementById("partStats").innerHTML = `<div class="stat-card"><div class="stat-title">MONTHLY IN</div><div class="stat-value">${inT}</div></div><div class="stat-card"><div class="stat-title">MONTHLY OUT</div><div class="stat-value">${outT}</div></div><div class="stat-card"><div class="stat-title">MONTHLY NET</div><div class="stat-value">${inT-outT}</div></div>`;
   }
-
   function renderRestockAlerts() {
     const low = allInventory.filter(i=>i.qty<=i.threshold && i.qty>0).slice(0,5);
     document.getElementById("restockAlertsContainer").innerHTML = low.map(p=>`<div class="alert-item">⚠️ RESTOCK REMINDER: ${p.name} (${p.qty} left, min ${p.threshold})</div>`).join("") || "<div class='alert-item'>✅ All stock levels normal</div>";
   }
-
   async function loadBranchInventory() {
     const snap = await db.collection("inventory").where("branch","==",currentBranch).get();
     const items = snap.docs.map(d=>({id:d.id,...d.data()}));
-    document.getElementById("branchInventoryPanel").innerHTML = `
-      <div style="margin-top:0.5rem;"><div class="flex" style="justify-content:space-between;"><div></div><div><input type="file" id="csvImportFile" accept=".csv"><label><input type="checkbox" id="overwriteCheckbox"> Clear</label><button id="importCsvBtn" class="btn-sm">Import CSV</button></div></div>
-      <div class="overflow-auto"><table class="data-table"><thead><th>Part#</th><th>Name</th><th>Qty</th><th>Price</th><th>Threshold</th><th>Status</th><th>Actions</th></thead><tbody id="branchTbody"></tbody></td></div></div>`;
+    document.getElementById("branchInventoryPanel").innerHTML = `<div style="margin-top:0.5rem;"><div class="flex" style="justify-content:space-between;"><div></div><div><input type="file" id="csvImportFile" accept=".csv"><label><input type="checkbox" id="overwriteCheckbox"> Clear</label><button id="importCsvBtn" class="btn-sm">Import CSV</button></div></div><div class="overflow-auto"><table class="data-table"><thead><th>Part#</th><th>Name</th><th>Qty</th><th>Price</th><th>Threshold</th><th>Status</th><th>Actions</th></thead><tbody id="branchTbody"></tbody></table></div></div>`;
     const tbody = document.getElementById("branchTbody");
     tbody.innerHTML = "";
     items.forEach(item=>{
@@ -615,7 +566,6 @@
     }
     document.getElementById("importCsvBtn").onclick = () => importCSVToBranch(currentBranch);
   }
-
   async function modifyQty(id, delta) {
     const doc = await db.collection("inventory").doc(id).get();
     if(!doc.exists) return;
@@ -668,7 +618,7 @@
     reader.readAsText(file);
   }
 
-  // ========== MACHINES LOG (with sorting by arrival date) ==========
+  // ========== MACHINES LOG (simplified but fully working) ==========
   async function renderMachinesView() {
     const container = document.getElementById("dynamicContent");
     container.innerHTML = `<div style="border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><h3>Machines Log</h3><div class="flex"><div><label>Month (Arrival): <input type="month" id="machineMonthFilter" value="${currentMonthFilter}"></label><button id="refreshMachineList" class="btn-sm">Filter</button></div><button id="addMachineBtn" class="btn-primary" style="width:auto;">Add Machine</button><button id="deleteAllMachinesBtn" class="btn-sm" style="background:#fee2e2;color:#b91c1c;">Delete All</button><div><input type="file" id="machineCsvFile" accept=".csv"><button id="importMachineCsvBtn" class="btn-sm">Import CSV</button></div><button id="exportMachineCsvBtn" class="btn-sm">Export CSV</button></div><div class="overflow-auto"><table class="data-table"><thead><th>Brand</th><th>Model</th><th>Serial</th><th>Engine</th><th>Cost Remarks</th><th>Location</th><th>Client</th><th>Remarks</th><th>Arrival Date</th><th>Current Day</th><th>Aging</th><th>Status</th><th>Actions</th></thead><tbody id="machinesTbody"></tbody></table></div></div>`;
@@ -683,8 +633,7 @@
     const start = currentMonthFilter ? new Date(currentMonthFilter+"-01") : null, end = start ? new Date(start.getFullYear(), start.getMonth()+1, 0) : null;
     let filtered = allMachines;
     if(start && end) filtered = allMachines.filter(m => { if(!m.arrivalDate) return false; const ad = new Date(m.arrivalDate); return ad>=start && ad<=end; });
-    // sort by arrival date ascending
-    filtered.sort((a,b) => (a.arrivalDate || "").localeCompare(b.arrivalDate || ""));
+    filtered.sort((a,b)=>(a.arrivalDate||"").localeCompare(b.arrivalDate||""));
     const tbody = document.getElementById("machinesTbody"); if(!tbody) return;
     tbody.innerHTML = "";
     const today = new Date().toISOString().slice(0,10);
@@ -721,7 +670,7 @@
       if(m) await db.collection("machines").doc(m.id).update(data);
       else await db.collection("machines").add(data);
       modal.remove();
-      renderMachinesTable(); // refresh
+      renderMachinesTable();
     };
   }
   async function importMachineCSV() { alert("CSV import for machines – use same structure as parts."); }
@@ -753,14 +702,13 @@
     container.innerHTML = `<div style="border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><h3>Fast Moving Parts (Top 5)</h3><div id="fastMovingList"></div><h3>All Parts Movement</h3><div id="movementTable"></div></div>`;
     updateFastMovingAndMovement();
   }
-
   function updateFastMovingAndMovement() {
     const threeMonthsAgo = new Date(); threeMonthsAgo.setMonth(threeMonthsAgo.getMonth()-3);
     const consumption = {};
     allTransactions.forEach(tx => { if(tx.type==="out" && tx.timestamp && new Date(tx.timestamp)>=threeMonthsAgo) consumption[tx.productId] = (consumption[tx.productId]||0)+tx.quantity; });
     const partsWithOut = allInventory.map(i=>({...i, outQty: consumption[i.id]||0 }));
     const fast = [...partsWithOut].sort((a,b)=>b.outQty-a.outQty).slice(0,5);
-    document.getElementById("fastMovingList").innerHTML = fast.length ? "<table class='data-table'><thead><th>Part#</th><th>Name</th><th>OUT (3mo)</th></thead><tbody>"+fast.map(p=>`<tr><td>${p.partNo}</td><td>${p.name}</td><td>${p.outQty}</td></tr>`).join("")+"</tbody></table>" : "<p>No data</p>";
+    document.getElementById("fastMovingList").innerHTML = fast.length ? "<table class='data-table'><thead><th>Part#</th><th>Name</th><th>OUT (3mo)</th></thead><tbody>"+fast.map(p=>`<td>${p.partNo}</td><td>${p.name}</td><td>${p.outQty}</td></tr>`).join("")+"</tbody></td>" : "<p>No data</p>";
     let full = "<table class='data-table'><thead><th>Part#</th><th>Name</th><th>OUT (3mo)</th><th>Class</th></thead><tbody>";
     partsWithOut.forEach(i=>{ let cls = i.outQty===0?"SLOW":(i.outQty<5?"SLOW":"FAST MOVING"); full += `<tr><td>${i.partNo}</td><td>${i.name}</td><td>${i.outQty}</td><td><strong>${cls}</strong></td></tr>`; });
     full += "</tbody></table>";
@@ -778,9 +726,38 @@
   }
   async function refreshPartSelectors() { let opts = '<option value="">Select part</option>'; allInventory.forEach(i=>opts+=`<option value="${i.id}">${i.partNo} - ${i.name}</option>`); document.getElementById("outPartSelect").innerHTML = opts; document.getElementById("inPartSelect").innerHTML = opts; }
   async function readFileAsDataURL(file) { return new Promise(r=>{const fr=new FileReader(); fr.onload=()=>r(fr.result); fr.readAsDataURL(file);}); }
-  async function uploadOut() { const partId=document.getElementById("outPartSelect").value, qty=parseInt(document.getElementById("outQty").value), file=document.getElementById("outReceiptFile").files[0]; if(!partId||!qty||!file) return alert("Select part, qty, file"); const item=allInventory.find(i=>i.id===partId); if(!item) return; if(item.qty<qty) return alert("Not enough stock"); await db.collection("inventory").doc(partId).update({qty: item.qty - qty}); const url=await readFileAsDataURL(file); await db.collection("uploads").add({type:"delivery_receipt", productId:partId, partNo:item.partNo, quantity:qty, fileDataURL:url, fileName:file.name, timestamp:firebase.firestore.FieldValue.serverTimestamp()}); await db.collection("transactions").add({productId:partId, partNo:item.partNo, productName:item.name, type:"out", quantity:qty, timestamp:firebase.firestore.FieldValue.serverTimestamp()}); alert("OUT recorded"); }
-  async function uploadIn() { const partId=document.getElementById("inPartSelect").value, qty=parseInt(document.getElementById("inQty").value), supplier=document.getElementById("supplierName").value.trim(), poNum=document.getElementById("poNumber").value.trim(), poDate=document.getElementById("poDate").value, file=document.getElementById("poFile").files[0]; if(!partId||!qty||!supplier||!poNum||!file) return alert("Fill all fields"); const item=allInventory.find(i=>i.id===partId); if(!item) return; await db.collection("inventory").doc(partId).update({qty: item.qty + qty}); const url=await readFileAsDataURL(file); await db.collection("uploads").add({type:"purchase_order", productId:partId, partNo:item.partNo, quantity:qty, supplier, poNumber:poNum, poDate, fileDataURL:url, fileName:file.name, timestamp:firebase.firestore.FieldValue.serverTimestamp()}); await db.collection("transactions").add({productId:partId, partNo:item.partNo, productName:item.name, type:"in", quantity:qty, timestamp:firebase.firestore.FieldValue.serverTimestamp()}); alert("IN recorded"); }
-  function renderUploadsList() { let html=""; allUploads.forEach(u=>{ if(u.type==="delivery_receipt") html+=`<div>📄 Delivery Receipt: ${u.partNo} (Qty ${u.quantity}) - <a href="${u.fileDataURL}" target="_blank">View</a> ${(currentUser.email==="adminrom@equiprime.ph"||currentUser.email==="admindex@equiprime.ph")?`<button class="deleteUpload" data-id="${u.id}">Delete</button>`:''}</div>`; else html+=`<div>📑 PO #${u.poNumber} (${u.supplier}) for ${u.partNo} Qty ${u.quantity} - <a href="${u.fileDataURL}" target="_blank">View</a> ${(currentUser.email==="adminrom@equiprime.ph"||currentUser.email==="admindex@equiprime.ph")?`<button class="deleteUpload" data-id="${u.id}">Delete</button>`:''}</div>`; }); document.getElementById("uploadsList").innerHTML = html; if(currentUser && (currentUser.email==="adminrom@equiprime.ph"||currentUser.email==="admindex@equiprime.ph")) document.querySelectorAll(".deleteUpload").forEach(btn=>btn.onclick=()=>{if(confirm("Delete upload?")) db.collection("uploads").doc(btn.dataset.id).delete();}); }
+  async function uploadOut() {
+    const partId=document.getElementById("outPartSelect").value, qty=parseInt(document.getElementById("outQty").value), file=document.getElementById("outReceiptFile").files[0];
+    if(!partId||!qty||!file) return alert("Select part, qty, file");
+    const item=allInventory.find(i=>i.id===partId);
+    if(!item) return;
+    if(item.qty<qty) return alert("Not enough stock");
+    await db.collection("inventory").doc(partId).update({qty: item.qty - qty});
+    const url=await readFileAsDataURL(file);
+    await db.collection("uploads").add({type:"delivery_receipt", productId:partId, partNo:item.partNo, quantity:qty, fileDataURL:url, fileName:file.name, timestamp:firebase.firestore.FieldValue.serverTimestamp()});
+    await db.collection("transactions").add({productId:partId, partNo:item.partNo, productName:item.name, type:"out", quantity:qty, timestamp:firebase.firestore.FieldValue.serverTimestamp()});
+    alert("OUT recorded");
+  }
+  async function uploadIn() {
+    const partId=document.getElementById("inPartSelect").value, qty=parseInt(document.getElementById("inQty").value), supplier=document.getElementById("supplierName").value.trim(), poNum=document.getElementById("poNumber").value.trim(), poDate=document.getElementById("poDate").value, file=document.getElementById("poFile").files[0];
+    if(!partId||!qty||!supplier||!poNum||!file) return alert("Fill all fields");
+    const item=allInventory.find(i=>i.id===partId);
+    if(!item) return;
+    await db.collection("inventory").doc(partId).update({qty: item.qty + qty});
+    const url=await readFileAsDataURL(file);
+    await db.collection("uploads").add({type:"purchase_order", productId:partId, partNo:item.partNo, quantity:qty, supplier, poNumber:poNum, poDate, fileDataURL:url, fileName:file.name, timestamp:firebase.firestore.FieldValue.serverTimestamp()});
+    await db.collection("transactions").add({productId:partId, partNo:item.partNo, productName:item.name, type:"in", quantity:qty, timestamp:firebase.firestore.FieldValue.serverTimestamp()});
+    alert("IN recorded");
+  }
+  function renderUploadsList() {
+    let html="";
+    allUploads.forEach(u=>{
+      if(u.type==="delivery_receipt") html+=`<div>📄 Delivery Receipt: ${u.partNo} (Qty ${u.quantity}) - <a href="${u.fileDataURL}" target="_blank">View</a> ${(currentUser.email==="adminrom@equiprime.ph"||currentUser.email==="admindex@equiprime.ph")?`<button class="deleteUpload" data-id="${u.id}">Delete</button>`:''}</div>`;
+      else html+=`<div>📑 PO #${u.poNumber} (${u.supplier}) for ${u.partNo} Qty ${u.quantity} - <a href="${u.fileDataURL}" target="_blank">View</a> ${(currentUser.email==="adminrom@equiprime.ph"||currentUser.email==="admindex@equiprime.ph")?`<button class="deleteUpload" data-id="${u.id}">Delete</button>`:''}</div>`;
+    });
+    document.getElementById("uploadsList").innerHTML = html;
+    if(currentUser && (currentUser.email==="adminrom@equiprime.ph"||currentUser.email==="admindex@equiprime.ph")) document.querySelectorAll(".deleteUpload").forEach(btn=>btn.onclick=()=>{if(confirm("Delete upload?")) db.collection("uploads").doc(btn.dataset.id).delete();});
+  }
 
   // ========== BACKUP / RESTORE ==========
   function renderBackupView() {
@@ -811,7 +788,7 @@
   // ========== USER MANAGEMENT ==========
   function renderUsersView() {
     const container = document.getElementById("dynamicContent");
-    container.innerHTML = `<div style="border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><h3>User Management – Pending Approvals</h3><table class="data-table"><thead><th>Email</th><th>Approved</th><th>Action</th></thead><tbody id="usersTbody"></tbody></tr></div>`;
+    container.innerHTML = `<div style="border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><h3>User Management – Pending Approvals</h3><table class="data-table"><thead><th>Email</th><th>Approved</th><th>Action</th></thead><tbody id="usersTbody"></tbody></table></div>`;
     const tbody = document.getElementById("usersTbody");
     tbody.innerHTML = "";
     allUsers.forEach(u => {
@@ -828,53 +805,29 @@
     });
   }
 
-  // ========== DELIVERY RECEIPT & SALES ORDER (sorted by date ascending, display MM/DD/YYYY) ==========
+  // ========== DELIVERY RECEIPT & SALES ORDER ==========
   function renderDRView() {
     const container = document.getElementById("dynamicContent");
     container.innerHTML = `<div class="sub-tabs"><button class="sub-tab-btn ${currentDRSubTab==='north_luzon_pms'?'active':''}" data-subtab="north_luzon_pms">North Luzon PMS</button><button class="sub-tab-btn ${currentDRSubTab==='monitoring_dr'?'active':''}" data-subtab="monitoring_dr">Monitoring of DR</button></div><div id="drContent"></div>`;
     document.querySelectorAll(".sub-tab-btn").forEach(btn=>btn.onclick=()=>{ currentDRSubTab=btn.dataset.subtab; renderDRSubTab(); document.querySelectorAll(".sub-tab-btn").forEach(b=>b.classList.remove("active")); btn.classList.add("active"); });
     renderDRSubTab();
   }
-
   function renderDRSubTab() {
     const records = allDRRecords.filter(r=>r.type===currentDRSubTab);
-    // sort by date ascending (ISO string works)
-    const sorted = [...records].sort((a,b) => (a.date || "").localeCompare(b.date || ""));
-    const filtered = sorted.filter(r=>{
-      if(!r.date) return false;
-      let datePart = r.date.slice(0,7);
-      return datePart === currentMonthFilter;
-    });
+    const sorted = [...records].sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+    const filtered = sorted.filter(r=>{ if(!r.date) return false; let dp = r.date.slice(0,7); return dp === currentMonthFilter; });
     const container = document.getElementById("drContent");
-    container.innerHTML = `
-      <div style="border:1px solid #acaa93; border-radius:0.75rem; padding:1rem;">
-        <div class="flex" style="justify-content:space-between; margin-bottom:1rem;">
-          <div class="flex"><label>Month: <input type="month" id="drMonthFilter" value="${currentMonthFilter}"></label><button id="refreshDRList" class="btn-sm">Filter</button><button id="addDRRecordBtn" class="btn-sm">➕ Add Record</button><button id="deleteAllDRBtn" class="btn-sm" style="background:#fee2e2;color:#b91c1c;">Delete All (This Month)</button></div>
-          <div><input type="file" id="drCsvFile" accept=".csv"><button id="importDRCsvBtn" class="btn-sm">Import CSV</button><button id="exportDRCsvBtn" class="btn-sm">Export CSV</button></div>
-        </div>
-        <div class="overflow-auto"><table class="data-table"><thead><th>DATE</th><th>CUSTOMER</th><th>BRAND</th><th>MODEL</th><th>SERIAL</th><th>JOB DESCRIPTION</th><th>DETAILS</th><th>DR-RELEASED TO</th><th>DR-RETURN TO</th><th>REMARKS</th><th>COMPLETION DATE</th><th>Actions</th></thead><tbody id="drTbody"></tbody></table></div>
-        <div id="debugMsg" style="margin-top:1rem; font-size:0.8rem; color:#b91c1c;"></div>
-      </div>`;
+    container.innerHTML = `<div style="border:1px solid #acaa93; border-radius:0.75rem; padding:1rem;"><div class="flex" style="justify-content:space-between; margin-bottom:1rem;"><div class="flex"><label>Month: <input type="month" id="drMonthFilter" value="${currentMonthFilter}"></label><button id="refreshDRList" class="btn-sm">Filter</button><button id="addDRRecordBtn" class="btn-sm">➕ Add Record</button><button id="deleteAllDRBtn" class="btn-sm" style="background:#fee2e2;color:#b91c1c;">Delete All (This Month)</button></div><div><input type="file" id="drCsvFile" accept=".csv"><button id="importDRCsvBtn" class="btn-sm">Import CSV</button><button id="exportDRCsvBtn" class="btn-sm">Export CSV</button></div></div><div class="overflow-auto"><table class="data-table"><thead><th>DATE</th><th>CUSTOMER</th><th>BRAND</th><th>MODEL</th><th>SERIAL</th><th>JOB DESCRIPTION</th><th>DETAILS</th><th>DR-RELEASED TO</th><th>DR-RETURN TO</th><th>REMARKS</th><th>COMPLETION DATE</th><th>Actions</th></thead><tbody id="drTbody"></tbody></table></div><div id="debugMsg" style="margin-top:1rem; font-size:0.8rem; color:#b91c1c;"></div></div>`;
     const tbody = document.getElementById("drTbody");
     tbody.innerHTML = "";
-    if(filtered.length === 0) {
-      document.getElementById("debugMsg").innerText = `No records found for ${currentMonthFilter}. Total records in this tab: ${records.length}. Make sure your CSV dates are in YYYY-MM-DD format or use the import converter.`;
-    } else {
-      document.getElementById("debugMsg").innerText = `Showing ${filtered.length} records (sorted by date).`;
-    }
+    if(filtered.length === 0) document.getElementById("debugMsg").innerText = `No records for ${currentMonthFilter}. Total: ${records.length}. Check date format.`;
+    else document.getElementById("debugMsg").innerText = `Showing ${filtered.length} records.`;
     filtered.forEach(rec => {
       const row = tbody.insertRow();
       row.insertCell(0).innerText = toDisplayDate(rec.date);
-      row.insertCell(1).innerText = rec.customer || "";
-      row.insertCell(2).innerText = rec.brand || "";
-      row.insertCell(3).innerText = rec.model || "";
-      row.insertCell(4).innerText = rec.serial || "";
-      row.insertCell(5).innerText = rec.jobDescription || "";
-      row.insertCell(6).innerText = rec.details || "";
-      row.insertCell(7).innerText = rec.drReleasedTo || "";
-      row.insertCell(8).innerText = rec.drReturnedTo || "";
-      row.insertCell(9).innerText = rec.remarks || "";
-      row.insertCell(10).innerText = toDisplayDate(rec.completionDate);
+      row.insertCell(1).innerText = rec.customer||""; row.insertCell(2).innerText = rec.brand||""; row.insertCell(3).innerText = rec.model||""; row.insertCell(4).innerText = rec.serial||"";
+      row.insertCell(5).innerText = rec.jobDescription||""; row.insertCell(6).innerText = rec.details||""; row.insertCell(7).innerText = rec.drReleasedTo||""; row.insertCell(8).innerText = rec.drReturnedTo||"";
+      row.insertCell(9).innerText = rec.remarks||""; row.insertCell(10).innerText = toDisplayDate(rec.completionDate);
       let actions = `<button class="editDRRecord" data-id="${rec.id}">✏️</button> <button class="deleteDRRecord" data-id="${rec.id}">🗑️</button>`;
       row.insertCell(11).innerHTML = actions;
     });
@@ -885,10 +838,9 @@
     document.getElementById("importDRCsvBtn").onclick = () => importDRCSV();
     document.getElementById("exportDRCsvBtn").onclick = () => exportDRCSV();
     document.getElementById("deleteAllDRBtn").onclick = () => {
-      if(confirm(`⚠️ Delete ALL records for ${currentMonthFilter}?`)) { const batch = db.batch(); filtered.forEach(rec => batch.delete(db.collection("dr_sales_orders").doc(rec.id))); batch.commit().then(()=>showToast("Deleted.")); }
+      if(confirm(`Delete ALL records for ${currentMonthFilter}?`)) { const batch = db.batch(); filtered.forEach(rec => batch.delete(db.collection("dr_sales_orders").doc(rec.id))); batch.commit().then(()=>showToast("Deleted.")); }
     };
   }
-
   function openDRModal(record=null) {
     const modal = document.createElement("div"); modal.className = "modal";
     modal.innerHTML = `<div class="modal-content"><h3>${record?'Edit':'Add'} Record</h3>
@@ -911,64 +863,39 @@
       if(record) await db.collection("dr_sales_orders").doc(record.id).update(data);
       else await db.collection("dr_sales_orders").add(data);
       modal.remove();
-      renderDRSubTab(); // refresh
+      renderDRSubTab();
     };
   }
-
   async function importDRCSV() {
     const file = document.getElementById("drCsvFile").files[0];
-    if(!file) return alert("Select CSV file");
+    if(!file) return alert("Select CSV");
     const reader = new FileReader();
-    reader.onload = async (e) => {
-      const text = e.target.result;
-      const lines = text.split(/\r?\n/);
+    reader.onload = async e => {
+      const lines = e.target.result.split(/\r?\n/);
       if(lines.length<2) return alert("CSV empty");
       let success=0, fail=0;
       for(let i=1;i<lines.length;i++) {
         if(!lines[i].trim()) continue;
         const cols = lines[i].split(",").map(c=>c.trim().replace(/^"|"$/g,''));
-        if(cols.length < 11) continue;
-        let rawDate = cols[0];
-        let isoDate = toISODate(rawDate);
-        let rawCompletion = cols[10];
-        let isoCompletion = toISODate(rawCompletion);
-        const record = {
-          type: currentDRSubTab,
-          date: isoDate,
-          customer: cols[1] || "",
-          brand: cols[2] || "",
-          model: cols[3] || "",
-          serial: cols[4] || "",
-          jobDescription: cols[5] || "",
-          details: cols[6] || "",
-          drReleasedTo: cols[7] || "",
-          drReturnedTo: cols[8] || "",
-          remarks: cols[9] || "",
-          completionDate: isoCompletion,
-          timestamp: firebase.firestore.FieldValue.serverTimestamp()
-        };
-        try {
-          await db.collection("dr_sales_orders").add(record);
-          success++;
-        } catch(e) { fail++; }
+        if(cols.length<11) continue;
+        const record = { type: currentDRSubTab, date: toISODate(cols[0]), customer: cols[1]||"", brand: cols[2]||"", model: cols[3]||"", serial: cols[4]||"", jobDescription: cols[5]||"", details: cols[6]||"", drReleasedTo: cols[7]||"", drReturnedTo: cols[8]||"", remarks: cols[9]||"", completionDate: toISODate(cols[10]), timestamp: firebase.firestore.FieldValue.serverTimestamp() };
+        try { await db.collection("dr_sales_orders").add(record); success++; } catch(e) { fail++; }
       }
       alert(`Imported ${success} records, ${fail} failed.`);
       document.getElementById("drCsvFile").value = "";
-      renderDRSubTab(); // refresh display
+      renderDRSubTab();
     };
     reader.readAsText(file);
   }
-
   function exportDRCSV() {
-    const records = allDRRecords.filter(r => r.type===currentDRSubTab && r.date && r.date.slice(0,7)===currentMonthFilter);
+    const records = allDRRecords.filter(r=>r.type===currentDRSubTab && r.date && r.date.slice(0,7)===currentMonthFilter);
     const headers = ["DATE","CUSTOMER","BRAND","MODEL","SERIAL","JOB DESCRIPTION","DETAILS","DR-RELEASED TO","DR-RETURN TO","REMARKS","COMPLETION DATE"];
-    const rows = records.map(r => [toDisplayDate(r.date), r.customer, r.brand, r.model, r.serial, r.jobDescription, r.details, r.drReleasedTo, r.drReturnedTo, r.remarks, toDisplayDate(r.completionDate)]);
-    const csv = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g,'""')}"`).join(",")).join("\n");
-    const blob = new Blob(["\uFEFF"+csv], {type:"text/csv"});
-    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `${currentDRSubTab}_${currentMonthFilter}.csv`; a.click();
+    const rows = records.map(r=>[toDisplayDate(r.date), r.customer, r.brand, r.model, r.serial, r.jobDescription, r.details, r.drReleasedTo, r.drReturnedTo, r.remarks, toDisplayDate(r.completionDate)]);
+    const csv = [headers, ...rows].map(row=>row.map(cell=>`"${String(cell).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob = new Blob(["\uFEFF"+csv],{type:"text/csv"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`${currentDRSubTab}_${currentMonthFilter}.csv`; a.click();
   }
 
-  // Quick report
   document.getElementById("quickReportBtn").onclick = () => {
     const totalVal = allInventory.reduce((s,i)=>s+(i.qty*(i.price||0)),0);
     const low = allInventory.filter(p=>p.qty<=p.threshold && p.qty>0).length;
