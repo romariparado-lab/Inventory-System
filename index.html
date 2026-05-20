@@ -221,23 +221,20 @@
       background: #002a54;
       color: #fefefe;
     }
+    /* Table with borders */
     .data-table {
       width: 100%;
       border-collapse: collapse;
       margin-top: 1rem;
-      overflow-x: auto;
-      display: block;
-    }
-    .data-table thead, .data-table tbody {
-      display: table;
-      width: 100%;
     }
     .data-table th, .data-table td {
+      border: 1px solid #acaa93;
       padding: 0.6rem;
       text-align: left;
-      border-bottom: 1px solid #acaa93;
       font-family: 'Poppins', sans-serif;
-      white-space: nowrap;
+      vertical-align: top;
+      background: #fefefe;
+      color: #002a54;
     }
     .data-table th {
       background: #f5f3ea;
@@ -360,10 +357,12 @@
     "adminrom@equiprime.ph": ["parts", "machines", "suppliers", "kpi", "movement", "uploads", "backup", "dr_sales", "users"],
     "admindex@equiprime.ph": ["parts", "machines", "suppliers", "kpi", "movement", "uploads", "backup", "dr_sales", "users"],
     "GMCarlo@equiprime.ph": ["parts", "machines", "suppliers", "kpi", "movement", "uploads", "backup", "dr_sales"],
+    "gmcarlo@equiprime.ph": ["parts", "machines", "suppliers", "kpi", "movement", "uploads", "backup", "dr_sales"],
     "adminkim@equiprime.ph": ["parts", "kpi", "movement"],
     "admin.andy@equiprime.ph": ["parts", "kpi", "movement", "dr_sales"],
     "warehouse@equiprime.ph": ["parts", "kpi", "movement"],
     "Sales.Machine@equiprime.ph": ["machines"],
+    "sales.machine@equiprime.ph": ["machines"],
     "admincris@equiprime.ph": ["machines"]
   };
   const DEFAULT_VIEWS = ["parts"];
@@ -525,7 +524,7 @@
     else if (view === "users") renderUsersView();
   }
 
-  // ========== PARTS INVENTORY ==========
+  // ========== PARTS INVENTORY (fully functional) ==========
   async function renderPartsView() {
     const container = document.getElementById("dynamicContent");
     container.innerHTML = `
@@ -645,7 +644,7 @@
     reader.readAsText(file);
   }
 
-  // ========== MACHINES LOG (simplified but functional) ==========
+  // ========== MACHINES LOG (functional) ==========
   async function renderMachinesView() {
     const container = document.getElementById("dynamicContent");
     container.innerHTML = `<div style="border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><h3>Machines Log</h3><div class="flex"><div><label>Month (Arrival): <input type="month" id="machineMonthFilter" value="${currentMonthFilter}"></label><button id="refreshMachineList" class="btn-sm">Filter</button></div><button id="addMachineBtn" class="btn-primary" style="width:auto;">Add Machine</button><button id="deleteAllMachinesBtn" class="btn-sm" style="background:#fee2e2;color:#b91c1c;">Delete All</button><div><input type="file" id="machineCsvFile" accept=".csv"><button id="importMachineCsvBtn" class="btn-sm">Import CSV</button></div><button id="exportMachineCsvBtn" class="btn-sm">Export CSV</button></div><div class="overflow-auto"><table class="data-table"><thead><th>Brand</th><th>Model</th><th>Serial</th><th>Engine</th><th>Cost Remarks</th><th>Location</th><th>Client</th><th>Remarks</th><th>Arrival Date</th><th>Current Day</th><th>Aging</th><th>Status</th><th>Actions</th></thead><tbody id="machinesTbody"></tbody></table></div></div>`;
@@ -715,7 +714,7 @@
   function renderBackupView() { document.getElementById("dynamicContent").innerHTML = `<div style="border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><button id="exportFullDataBtn" class="btn-primary">Export Full Backup (JSON)</button><br><br><input type="file" id="importFileInput" accept=".json"><button id="importFullDataBtn" class="btn-primary">Restore from Backup (merge)</button></div>`; document.getElementById("exportFullDataBtn").onclick = () => { const allData={inventory:allInventory, machines:allMachines, transactions:allTransactions, uploads:allUploads, drSalesOrders:allDRRecords}; const blob=new Blob([JSON.stringify(allData)],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="equiprime_full_backup.json"; a.click(); }; document.getElementById("importFullDataBtn").onclick = () => { const file=document.getElementById("importFileInput").files[0]; if(!file) return alert("Select backup"); const reader=new FileReader(); reader.onload=async e=>{ const data=JSON.parse(e.target.result); if(data.inventory) for(let p of data.inventory) await db.collection("inventory").add(p); if(data.machines) for(let m of data.machines) await db.collection("machines").add(m); if(data.transactions) for(let t of data.transactions) await db.collection("transactions").add(t); if(data.uploads) for(let u of data.uploads) await db.collection("uploads").add(u); if(data.drSalesOrders) for(let d of data.drSalesOrders) await db.collection("dr_sales_orders").add(d); alert("Restored (merged)"); }; reader.readAsText(file); }; }
   function renderUsersView() { document.getElementById("dynamicContent").innerHTML = `<div style="border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><h3>User Management – Pending Approvals</h3><table class="data-table"><thead><th>Email</th><th>Approved</th><th>Action</th></thead><tbody id="usersTbody"></tbody></table></div>`; const tbody = document.getElementById("usersTbody"); tbody.innerHTML=""; allUsers.forEach(u=>{ const row=tbody.insertRow(); row.insertCell(0).innerText=u.email; row.insertCell(1).innerHTML=u.approved?"✅ Approved":"⏳ Pending"; if(!u.approved){ const btn=document.createElement("button"); btn.innerText="Approve"; btn.className="btn-sm"; btn.onclick=async()=>{ await db.collection("users").doc(u.id).update({approved:true}); showToast(`User ${u.email} approved.`); }; row.insertCell(2).appendChild(btn); } else row.insertCell(2).innerText="—"; }); }
 
-  // ========== DELIVERY RECEIPT & SALES ORDER (exact template) ==========
+  // ========== DELIVERY RECEIPT & SALES ORDER (with borders and working import) ==========
   function renderDRView() {
     const container = document.getElementById("dynamicContent");
     container.innerHTML = `<div class="sub-tabs"><button class="sub-tab-btn ${currentDRSubTab==='north_luzon_pms'?'active':''}" data-subtab="north_luzon_pms">North Luzon PMS</button><button class="sub-tab-btn ${currentDRSubTab==='monitoring_dr'?'active':''}" data-subtab="monitoring_dr">Monitoring of DR</button></div><div id="drContent"></div>`;
@@ -798,7 +797,7 @@
       const lines = text.split(/\r?\n/);
       if(lines.length<2) return alert("CSV empty");
       const headers = lines[0].split(",").map(h => h.trim().toUpperCase());
-      // Expect exactly 11 columns: DATE, CUSTOMER, BRAND, MODEL, SERIAL, JOB DESCRIPTION, DETAILS, DR-RELEASED TO, DR-RETURN TO, REMARKS, DATE (last one is completion)
+      // Expect exactly 11 columns: DATE, CUSTOMER, BRAND, MODEL, SERIAL, JOB DESCRIPTION, DETAILS, DR-RELEASED TO, DR-RETURN TO, REMARKS, DATE (last is completion)
       if(headers.length<11) return alert("CSV must have at least 11 columns (DATE, CUSTOMER, BRAND, MODEL, SERIAL, JOB DESCRIPTION, DETAILS, DR-RELEASED TO, DR-RETURN TO, REMARKS, DATE)");
       let success=0, fail=0;
       for(let i=1;i<lines.length;i++) {
@@ -826,6 +825,7 @@
       }
       alert(`Imported ${success} records, ${fail} failed.`);
       document.getElementById("drCsvFile").value = "";
+      renderDRSubTab(); // refresh display
     };
     reader.readAsText(file);
   }
