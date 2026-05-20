@@ -525,67 +525,216 @@
     else if (view === "users") renderUsersView();
   }
 
-  // ========== PARTS INVENTORY (fully functional, same as before) ==========
+  // ========== PARTS INVENTORY ==========
   async function renderPartsView() {
     const container = document.getElementById("dynamicContent");
-    container.innerHTML = `<div>Loading Parts Inventory...</div>`; // Full version in final code
-    // (Full parts code included in final, trimmed here for brevity but present in final answer)
+    container.innerHTML = `
+      <div class="stats-row" id="partStats"></div>
+      <div class="two-columns"><div class="form-card"><h3>ADD ASSET ENTRY</h3><div class="form-row"><label>Part Number *</label><input id="newPartNo"></div><div class="form-row"><label>Part Name *</label><input id="newPartName"></div><div class="form-row"><label>Category</label><select id="newCategory"><option>Kobelco Parts</option><option>Shantui Parts</option><option>Sakai Parts</option><option>Trime Parts</option><option>Non-Core Products</option></select></div><div class="form-row"><label>Quantity</label><input id="newQty" type="number" value="0"></div><div class="form-row"><label>Price (₱)</label><input id="newPrice" type="number" step="0.01" value="0.00"></div><div class="form-row"><label>Low Stock Threshold</label><input id="newThreshold" type="number" value="5"></div><button id="addPartBtn" class="btn-primary">COMMIT ENTRY</button><div id="addError" style="color:#b91c1c;font-size:0.8rem;"></div></div>
+        <div class="alerts-card"><h3>RESTOCK ALERT</h3><div id="restockAlertsContainer">Loading...</div><hr><h3>ACTIVE SUPPLIERS</h3><div class="supplier-item"><span class="supplier-name">SHANTUI</span><div class="reliability">Machines & Parts</div><span class="badge badge-green">ACTIVE</span></div><div class="supplier-item"><span class="supplier-name">SAKAI</span><div class="reliability">Compaction Equipment</div><span class="badge badge-green">ACTIVE</span></div><div class="supplier-item"><span class="supplier-name">TRIME</span><div class="reliability">Lighting Towers</div><span class="badge badge-green">ACTIVE</span></div><div class="supplier-item"><span class="supplier-name">BHI</span><div class="reliability">Breakers & Attachments</div><span class="badge badge-green">ACTIVE</span></div><div class="supplier-item"><span class="supplier-name">KD HAMMERS</span><div class="reliability">Hydraulic Hammers</div><span class="badge badge-green">ACTIVE</span></div></div>
+      </div>
+      <div class="branch-tabs" id="branchTabs"></div>
+      <div style="border:1px solid #acaa93; border-radius:0.75rem; padding:1rem; margin-top:1rem;"><h3>ASSET WAREHOUSE REGISTRY</h3><div id="branchInventoryPanel"></div></div>
+    `;
+    const monthDiv = document.createElement("div");
+    monthDiv.innerHTML = `<label>Month: <input type="month" id="partMonthFilter" value="${currentMonthFilter}"></label><button id="refreshPartStats" class="btn-sm">Refresh</button>`;
+    document.getElementById("partStats").parentNode.insertBefore(monthDiv, document.getElementById("partStats"));
+    document.getElementById("refreshPartStats").onclick = () => { currentMonthFilter = document.getElementById("partMonthFilter").value; updatePartStats(); };
+    await updatePartStats();
+    const branches = ["main","homonhon","coda","northluzon"];
+    const branchNames = { main:"Main Warehouse", homonhon:"Homonhon", coda:"CODA", northluzon:"North Luzon" };
+    document.getElementById("branchTabs").innerHTML = branches.map(b => `<div class="branch-btn ${b===currentBranch?'branch-active':''}" data-branch="${b}">${branchNames[b]}</div>`).join("");
+    document.querySelectorAll(".branch-btn").forEach(btn => btn.onclick = () => { currentBranch = btn.dataset.branch; loadBranchInventory(); document.querySelectorAll(".branch-btn").forEach(b=>b.classList.remove("branch-active")); btn.classList.add("branch-active"); });
+    await loadBranchInventory();
+    renderRestockAlerts();
+    document.getElementById("addPartBtn").onclick = addPartToBranch;
   }
-  // ... all other functions (rest of the code) are included in the final answer.
 
-  // ========== DELIVERY RECEIPT & SALES ORDER with exact CSV template ==========
+  async function updatePartStats() {
+    const start = new Date(currentMonthFilter+"-01"), end = new Date(start.getFullYear(), start.getMonth()+1, 0);
+    let inTotal=0, outTotal=0;
+    allTransactions.forEach(tx => { if(tx.timestamp && new Date(tx.timestamp)>=start && new Date(tx.timestamp)<=end) tx.type==="in"? inTotal+=tx.quantity : outTotal+=tx.quantity; });
+    document.getElementById("partStats").innerHTML = `<div class="stat-card"><div class="stat-title">MONTHLY IN</div><div class="stat-value">${inTotal}</div></div><div class="stat-card"><div class="stat-title">MONTHLY OUT</div><div class="stat-value">${outTotal}</div></div><div class="stat-card"><div class="stat-title">MONTHLY NET</div><div class="stat-value">${inTotal-outTotal}</div></div>`;
+  }
+
+  function renderRestockAlerts() {
+    const low = allInventory.filter(i=>i.qty<=i.threshold && i.qty>0).slice(0,5);
+    document.getElementById("restockAlertsContainer").innerHTML = low.map(p=>`<div class="alert-item">⚠️ RESTOCK REMINDER: ${p.name} (${p.qty} left, min ${p.threshold})</div>`).join("") || "<div class='alert-item'>✅ All stock levels normal</div>";
+  }
+
+  async function loadBranchInventory() {
+    const snap = await db.collection("inventory").where("branch","==",currentBranch).get();
+    const items = snap.docs.map(d=>({id:d.id,...d.data()}));
+    document.getElementById("branchInventoryPanel").innerHTML = `
+      <div style="margin-top:0.5rem;"><div class="flex" style="justify-content:space-between;"><div></div><div><input type="file" id="csvImportFile" accept=".csv"><label><input type="checkbox" id="overwriteCheckbox"> Clear</label><button id="importCsvBtn" class="btn-sm">Import CSV</button></div></div>
+      <div class="overflow-auto"><table class="data-table"><thead><th>Part#</th><th>Name</th><th>Qty</th><th>Price</th><th>Threshold</th><th>Status</th><th>Actions</th></thead><tbody id="branchTbody"></tbody></table></div></div>`;
+    const tbody = document.getElementById("branchTbody");
+    tbody.innerHTML = "";
+    items.forEach(item=>{
+      const status = item.qty==0?"Out":(item.qty<=item.threshold?"Low":"In");
+      const badge = status==="In"?"<span class='badge badge-green'>In Stock</span>":(status==="Low"?"<span class='badge badge-orange'>Low Stock</span>":"<span class='badge badge-red'>Out</span>");
+      const row = tbody.insertRow();
+      row.insertCell(0).innerText = item.partNo;
+      row.insertCell(1).innerText = item.name;
+      row.insertCell(2).innerHTML = `<div class="flex"><button class="decQty" data-id="${item.id}">−</button>${item.qty}<button class="incQty" data-id="${item.id}">+</button></div>`;
+      row.insertCell(3).innerText = "₱"+(item.price||0).toFixed(2);
+      row.insertCell(4).innerText = item.threshold;
+      row.insertCell(5).innerHTML = badge;
+      let actions = `<button class="editThresh" data-id="${item.id}">✏️</button>`;
+      if (allowedViews.includes("parts") && (currentUser.email==="adminrom@equiprime.ph"||currentUser.email==="admindex@equiprime.ph")) actions += ` <button class="deletePart" data-id="${item.id}">🗑️</button>`;
+      row.insertCell(6).innerHTML = actions;
+    });
+    document.querySelectorAll(".incQty").forEach(btn=>btn.onclick=()=>modifyQty(btn.dataset.id,1));
+    document.querySelectorAll(".decQty").forEach(btn=>btn.onclick=()=>modifyQty(btn.dataset.id,-1));
+    if(currentUser && (currentUser.email==="adminrom@equiprime.ph"||currentUser.email==="admindex@equiprime.ph")){
+      document.querySelectorAll(".editThresh").forEach(btn=>btn.onclick=()=>editThreshold(btn.dataset.id));
+      document.querySelectorAll(".deletePart").forEach(btn=>btn.onclick=()=>{if(confirm("Delete?")) db.collection("inventory").doc(btn.dataset.id).delete();});
+    }
+    document.getElementById("importCsvBtn").onclick = () => importCSVToBranch(currentBranch);
+  }
+
+  async function modifyQty(id, delta) {
+    const doc = await db.collection("inventory").doc(id).get();
+    if(!doc.exists) return;
+    let newQty = doc.data().qty + delta;
+    if(newQty<0) newQty=0;
+    const change = newQty - doc.data().qty;
+    if(change===0) return;
+    await db.collection("inventory").doc(id).update({ qty: newQty });
+    await db.collection("transactions").add({ productId:id, partNo:doc.data().partNo, productName:doc.data().name, branch:currentBranch, type:change>0?"in":"out", quantity:Math.abs(change), timestamp:firebase.firestore.FieldValue.serverTimestamp() });
+  }
+  async function editThreshold(id) { let newTh = prompt("New threshold:"); if(newTh && !isNaN(parseInt(newTh))) await db.collection("inventory").doc(id).update({ threshold: parseInt(newTh) }); }
+  async function addPartToBranch() {
+    const partNo = document.getElementById("newPartNo").value.trim(), name = document.getElementById("newPartName").value.trim();
+    if(!partNo || !name) { document.getElementById("addError").innerText = "Part# and Name required"; return; }
+    const qty = parseInt(document.getElementById("newQty").value)||0, price = parseFloat(document.getElementById("newPrice").value)||0, threshold = parseInt(document.getElementById("newThreshold").value)||5;
+    await db.collection("inventory").add({ partNo, name, branch:currentBranch, qty, price, threshold });
+    if(qty>0) await db.collection("transactions").add({ productId:"new", partNo, productName:name, branch:currentBranch, type:"in", quantity:qty, timestamp:firebase.firestore.FieldValue.serverTimestamp() });
+    document.getElementById("newPartNo").value=""; document.getElementById("newPartName").value=""; document.getElementById("addError").innerText="";
+    loadBranchInventory();
+  }
+  async function importCSVToBranch(branch) {
+    const file = document.getElementById("csvImportFile").files[0];
+    if(!file) return alert("Select CSV");
+    const overwrite = document.getElementById("overwriteCheckbox").checked;
+    if(overwrite && confirm("Clear all parts in this branch?")) {
+      const snap = await db.collection("inventory").where("branch","==",branch).get();
+      const batch = db.batch(); snap.forEach(doc=>batch.delete(doc.ref)); await batch.commit();
+    }
+    const reader = new FileReader();
+    reader.onload = async(e) => {
+      const lines = e.target.result.split(/\r?\n/);
+      const headers = lines[0].split(",").map(h=>h.trim().toLowerCase());
+      const idx = { partNumber: headers.indexOf("partnumber"), partName: headers.indexOf("partname"), category: headers.indexOf("category"), quantity: headers.indexOf("quantity"), price: headers.indexOf("price"), threshold: headers.indexOf("threshold") };
+      let success=0,fail=0;
+      for(let i=1;i<lines.length;i++) {
+        if(!lines[i].trim()) continue;
+        const cols = lines[i].split(",").map(c=>c.trim().replace(/^"|"$/g,''));
+        const partNo = cols[idx.partNumber], name = cols[idx.partName];
+        if(!partNo || !name) { fail++; continue; }
+        const category = (idx.category>=0 && cols[idx.category]) ? cols[idx.category] : "Non-Core Products";
+        let qty = parseInt((idx.quantity>=0 ? cols[idx.quantity] : 0)) || 0;
+        let price = parseFloat((idx.price>=0 ? cols[idx.price] : 0)) || 0;
+        let threshold = parseInt((idx.threshold>=0 ? cols[idx.threshold] : 5)) || 5;
+        await db.collection("inventory").add({ partNo, name, category, branch, qty, price, threshold });
+        success++;
+      }
+      alert(`Imported ${success} parts, ${fail} failed.`);
+      loadBranchInventory();
+    };
+    reader.readAsText(file);
+  }
+
+  // ========== MACHINES LOG (simplified but functional) ==========
+  async function renderMachinesView() {
+    const container = document.getElementById("dynamicContent");
+    container.innerHTML = `<div style="border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><h3>Machines Log</h3><div class="flex"><div><label>Month (Arrival): <input type="month" id="machineMonthFilter" value="${currentMonthFilter}"></label><button id="refreshMachineList" class="btn-sm">Filter</button></div><button id="addMachineBtn" class="btn-primary" style="width:auto;">Add Machine</button><button id="deleteAllMachinesBtn" class="btn-sm" style="background:#fee2e2;color:#b91c1c;">Delete All</button><div><input type="file" id="machineCsvFile" accept=".csv"><button id="importMachineCsvBtn" class="btn-sm">Import CSV</button></div><button id="exportMachineCsvBtn" class="btn-sm">Export CSV</button></div><div class="overflow-auto"><table class="data-table"><thead><th>Brand</th><th>Model</th><th>Serial</th><th>Engine</th><th>Cost Remarks</th><th>Location</th><th>Client</th><th>Remarks</th><th>Arrival Date</th><th>Current Day</th><th>Aging</th><th>Status</th><th>Actions</th></thead><tbody id="machinesTbody"></tbody></table></div></div>`;
+    renderMachinesTable();
+    document.getElementById("refreshMachineList").onclick = () => { currentMonthFilter = document.getElementById("machineMonthFilter").value; renderMachinesTable(); };
+    document.getElementById("addMachineBtn").onclick = () => openMachineModal();
+    document.getElementById("deleteAllMachinesBtn").onclick = () => { if(confirm("Delete ALL machines?")) db.collection("machines").get().then(snap=>{ const batch=db.batch(); snap.forEach(d=>batch.delete(d.ref)); batch.commit().then(()=>showToast("All machines deleted.")); }); };
+    document.getElementById("importMachineCsvBtn").onclick = () => importMachineCSV();
+    document.getElementById("exportMachineCsvBtn").onclick = () => exportMachineCSV();
+  }
+  async function renderMachinesTable() {
+    const start = currentMonthFilter ? new Date(currentMonthFilter+"-01") : null, end = start ? new Date(start.getFullYear(), start.getMonth()+1, 0) : null;
+    let filtered = allMachines;
+    if(start && end) filtered = allMachines.filter(m => { if(!m.arrivalDate) return false; const ad = new Date(m.arrivalDate); return ad>=start && ad<=end; });
+    const tbody = document.getElementById("machinesTbody"); if(!tbody) return;
+    tbody.innerHTML = "";
+    const today = new Date().toISOString().slice(0,10);
+    filtered.forEach(m => {
+      const arrival = m.arrivalDate || "";
+      let aging = arrival ? Math.ceil((new Date() - new Date(arrival)) / (1000*60*60*24)) : "";
+      const row = tbody.insertRow();
+      row.insertCell(0).innerText = m.brand||""; row.insertCell(1).innerText = m.model||""; row.insertCell(2).innerText = m.serialNumber||"";
+      row.insertCell(3).innerText = m.engineNumber||""; row.insertCell(4).innerText = m.remarksCost||""; row.insertCell(5).innerText = m.location||"";
+      row.insertCell(6).innerText = m.client||""; row.insertCell(7).innerText = m.remarks||""; row.insertCell(8).innerText = arrival;
+      row.insertCell(9).innerText = today; row.insertCell(10).innerText = aging;
+      let statusText = m.status||"AVAILABLE", badge = statusText==="AVAILABLE"?"<span class='badge badge-green'>AVAILABLE</span>":(statusText==="RESERVED"?"<span class='badge badge-orange'>RESERVED</span>":(statusText==="INTENDED"?"<span class='badge badge-orange'>INTENDED</span>":"<span class='badge badge-red'>SOLD</span>"));
+      row.insertCell(11).innerHTML = badge;
+      let actions = `<button class="editMachineBtn" data-id="${m.id}">✏️ Edit</button>`;
+      if (allowedViews.includes("machines") && (currentUser.email==="adminrom@equiprime.ph"||currentUser.email==="admindex@equiprime.ph")) actions += ` <button class="deleteMachine" data-id="${m.id}">🗑️ Delete</button>`;
+      row.insertCell(12).innerHTML = actions;
+    });
+    document.querySelectorAll(".editMachineBtn").forEach(btn=>btn.onclick=()=>openMachineModal(btn.dataset.id));
+    if(currentUser && (currentUser.email==="adminrom@equiprime.ph"||currentUser.email==="admindex@equiprime.ph")) {
+      document.querySelectorAll(".deleteMachine").forEach(btn=>btn.onclick=()=>{if(confirm("Delete?")) db.collection("machines").doc(btn.dataset.id).delete();});
+    }
+  }
+  function openMachineModal(id=null) {
+    const m = id ? allMachines.find(x=>x.id===id) : null;
+    const modal = document.createElement("div"); modal.className = "modal";
+    modal.innerHTML = `<div class="modal-content"><h3>${m?'Edit':'Add'} Machine</h3>${["Brand","Model","Serial Number","Engine Number","Remarks on cost","Location","Client","Remarks","Arrival Date"].map((f,i)=>`<div class="form-row"><label>${f}</label><input id="m${i}" value="${m?.[['brand','model','serialNumber','engineNumber','remarksCost','location','client','remarks','arrivalDate'][i]]||''}"></div>`).join("")}
+      <div class="form-row"><label>Status</label><select id="mStatus"><option value="AVAILABLE">AVAILABLE</option><option value="RESERVED">RESERVED</option><option value="INTENDED">INTENDED CLIENT</option><option value="SOLD">SOLD</option></select></div>
+      <div class="flex"><button id="saveMachineBtn" class="btn-primary">Save</button><button id="cancelMachineBtn" class="btn-sm">Cancel</button></div></div>`;
+    if(m) document.getElementById("mStatus").value = m.status||"AVAILABLE";
+    document.body.appendChild(modal);
+    document.getElementById("cancelMachineBtn").onclick = ()=>modal.remove();
+    document.getElementById("saveMachineBtn").onclick = async ()=>{
+      const data = { brand:document.getElementById("m0").value, model:document.getElementById("m1").value, serialNumber:document.getElementById("m2").value, engineNumber:document.getElementById("m3").value, remarksCost:document.getElementById("m4").value, location:document.getElementById("m5").value, client:document.getElementById("m6").value, remarks:document.getElementById("m7").value, arrivalDate:document.getElementById("m8").value, status:document.getElementById("mStatus").value, timestamp:firebase.firestore.FieldValue.serverTimestamp() };
+      if(m) await db.collection("machines").doc(m.id).update(data);
+      else await db.collection("machines").add(data);
+      modal.remove();
+    };
+  }
+  async function importMachineCSV() { alert("CSV import for machines – use same structure as parts."); }
+  function exportMachineCSV() { alert("Export machines CSV – implement if needed."); }
+
+  // ========== SUPPLIER TRACKING, KPI, MOVEMENT, UPLOADS, BACKUP, USERS ==========
+  function renderSuppliersView() { document.getElementById("dynamicContent").innerHTML = `<div style="border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><h3>Active Suppliers / Brands</h3><div class="supplier-item"><span class="supplier-name">SHANTUI</span><div class="reliability">Machines & Parts</div><span class="badge badge-green">ACTIVE</span></div><div class="supplier-item"><span class="supplier-name">SAKAI</span><div class="reliability">Compaction Equipment</div><span class="badge badge-green">ACTIVE</span></div><div class="supplier-item"><span class="supplier-name">TRIME</span><div class="reliability">Lighting Towers</div><span class="badge badge-green">ACTIVE</span></div><div class="supplier-item"><span class="supplier-name">BHI</span><div class="reliability">Breakers & Attachments</div><span class="badge badge-green">ACTIVE</span></div><div class="supplier-item"><span class="supplier-name">KD HAMMERS</span><div class="reliability">Hydraulic Hammers</div><span class="badge badge-green">ACTIVE</span></div></div>`; }
+  function renderKPIView() { document.getElementById("dynamicContent").innerHTML = `<div style="border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><h3>KPI Reports</h3><select id="kpiMonths"><option value="2">2 months</option><option value="3">3 months</option></select><button id="generateKpiBtn" class="btn-primary">Download CSV</button></div>`; document.getElementById("generateKpiBtn").onclick = () => { const months = parseInt(document.getElementById("kpiMonths").value), start = new Date(); start.setMonth(start.getMonth()-months); let inT=0, outT=0; allTransactions.forEach(tx => { if(tx.timestamp && new Date(tx.timestamp)>=start) tx.type==="in"? inT+=tx.quantity : outT+=tx.quantity; }); const csv = `Metric,Value\nTotal IN,${inT}\nTotal OUT,${outT}\nNet,${inT-outT}`; const blob = new Blob(["\uFEFF"+csv],{type:"text/csv"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`KPI_${months}months.csv`; a.click(); }; }
+  function renderMovementView() { document.getElementById("dynamicContent").innerHTML = `<div style="border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><h3>Fast Moving Parts (Top 5)</h3><div id="fastMovingList"></div><h3>All Parts Movement</h3><div id="movementTable"></div></div>`; updateFastMovingAndMovement(); }
+  function updateFastMovingAndMovement() { const threeMonthsAgo = new Date(); threeMonthsAgo.setMonth(threeMonthsAgo.getMonth()-3); const consumption = {}; allTransactions.forEach(tx => { if(tx.type==="out" && tx.timestamp && new Date(tx.timestamp)>=threeMonthsAgo) consumption[tx.productId] = (consumption[tx.productId]||0)+tx.quantity; }); const partsWithOut = allInventory.map(i=>({...i, outQty: consumption[i.id]||0 })); const fast = [...partsWithOut].sort((a,b)=>b.outQty-a.outQty).slice(0,5); document.getElementById("fastMovingList").innerHTML = fast.length ? "<table class='data-table'><thead><th>Part#</th><th>Name</th><th>OUT (3mo)</th></thead><tbody>"+fast.map(p=>`<tr><td>${p.partNo}</td><td>${p.name}</td><td>${p.outQty}</td></tr>`).join("")+"</tbody></table>" : "<p>No data</p>"; let full = "<table class='data-table'><thead><th>Part#</th><th>Name</th><th>OUT (3mo)</th><th>Class</th></thead><tbody>"; partsWithOut.forEach(i=>{ let cls = i.outQty===0?"SLOW":(i.outQty<5?"SLOW":"FAST MOVING"); full += `<tr><td>${i.partNo}</td><td>${i.name}</td><td>${i.outQty}</td><td><strong>${cls}</strong></td></tr>`; }); full += "</tbody></table>"; document.getElementById("movementTable").innerHTML = full; }
+  function renderUploadsView() { document.getElementById("dynamicContent").innerHTML = `<div style="border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><h3>Parts Uploads</h3><div class="flex"><select id="outPartSelect"></select><input id="outQty" type="number" placeholder="Qty"><input type="file" id="outReceiptFile"><button id="uploadOutBtn" class="btn-primary">Record OUT</button></div><hr><div class="flex"><select id="inPartSelect"></select><input id="inQty" type="number" placeholder="Qty"><input id="supplierName" placeholder="Supplier"><input id="poNumber" placeholder="PO #"><input type="date" id="poDate"><input type="file" id="poFile"><button id="uploadInBtn" class="btn-primary">Record IN</button></div><hr><h4>Uploaded Files</h4><div id="uploadsList"></div></div>`; refreshPartSelectors(); document.getElementById("uploadOutBtn").onclick = uploadOut; document.getElementById("uploadInBtn").onclick = uploadIn; renderUploadsList(); }
+  async function refreshPartSelectors() { let opts = '<option value="">Select part</option>'; allInventory.forEach(i=>opts+=`<option value="${i.id}">${i.partNo} - ${i.name}</option>`); document.getElementById("outPartSelect").innerHTML = opts; document.getElementById("inPartSelect").innerHTML = opts; }
+  async function readFileAsDataURL(file) { return new Promise(r=>{const fr=new FileReader(); fr.onload=()=>r(fr.result); fr.readAsDataURL(file);}); }
+  async function uploadOut() { const partId=document.getElementById("outPartSelect").value, qty=parseInt(document.getElementById("outQty").value), file=document.getElementById("outReceiptFile").files[0]; if(!partId||!qty||!file) return alert("Select part, qty, file"); const item=allInventory.find(i=>i.id===partId); if(!item) return; if(item.qty<qty) return alert("Not enough stock"); await db.collection("inventory").doc(partId).update({qty: item.qty - qty}); const url=await readFileAsDataURL(file); await db.collection("uploads").add({type:"delivery_receipt", productId:partId, partNo:item.partNo, quantity:qty, fileDataURL:url, fileName:file.name, timestamp:firebase.firestore.FieldValue.serverTimestamp()}); await db.collection("transactions").add({productId:partId, partNo:item.partNo, productName:item.name, type:"out", quantity:qty, timestamp:firebase.firestore.FieldValue.serverTimestamp()}); alert("OUT recorded"); }
+  async function uploadIn() { const partId=document.getElementById("inPartSelect").value, qty=parseInt(document.getElementById("inQty").value), supplier=document.getElementById("supplierName").value.trim(), poNum=document.getElementById("poNumber").value.trim(), poDate=document.getElementById("poDate").value, file=document.getElementById("poFile").files[0]; if(!partId||!qty||!supplier||!poNum||!file) return alert("Fill all fields"); const item=allInventory.find(i=>i.id===partId); if(!item) return; await db.collection("inventory").doc(partId).update({qty: item.qty + qty}); const url=await readFileAsDataURL(file); await db.collection("uploads").add({type:"purchase_order", productId:partId, partNo:item.partNo, quantity:qty, supplier, poNumber:poNum, poDate, fileDataURL:url, fileName:file.name, timestamp:firebase.firestore.FieldValue.serverTimestamp()}); await db.collection("transactions").add({productId:partId, partNo:item.partNo, productName:item.name, type:"in", quantity:qty, timestamp:firebase.firestore.FieldValue.serverTimestamp()}); alert("IN recorded"); }
+  function renderUploadsList() { let html=""; allUploads.forEach(u=>{ if(u.type==="delivery_receipt") html+=`<div>📄 Delivery Receipt: ${u.partNo} (Qty ${u.quantity}) - <a href="${u.fileDataURL}" target="_blank">View</a> ${(currentUser.email==="adminrom@equiprime.ph"||currentUser.email==="admindex@equiprime.ph")?`<button class="deleteUpload" data-id="${u.id}">Delete</button>`:''}</div>`; else html+=`<div>📑 PO #${u.poNumber} (${u.supplier}) for ${u.partNo} Qty ${u.quantity} - <a href="${u.fileDataURL}" target="_blank">View</a> ${(currentUser.email==="adminrom@equiprime.ph"||currentUser.email==="admindex@equiprime.ph")?`<button class="deleteUpload" data-id="${u.id}">Delete</button>`:''}</div>`; }); document.getElementById("uploadsList").innerHTML = html; if(currentUser && (currentUser.email==="adminrom@equiprime.ph"||currentUser.email==="admindex@equiprime.ph")) document.querySelectorAll(".deleteUpload").forEach(btn=>btn.onclick=()=>{if(confirm("Delete upload?")) db.collection("uploads").doc(btn.dataset.id).delete();}); }
+  function renderBackupView() { document.getElementById("dynamicContent").innerHTML = `<div style="border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><button id="exportFullDataBtn" class="btn-primary">Export Full Backup (JSON)</button><br><br><input type="file" id="importFileInput" accept=".json"><button id="importFullDataBtn" class="btn-primary">Restore from Backup (merge)</button></div>`; document.getElementById("exportFullDataBtn").onclick = () => { const allData={inventory:allInventory, machines:allMachines, transactions:allTransactions, uploads:allUploads, drSalesOrders:allDRRecords}; const blob=new Blob([JSON.stringify(allData)],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="equiprime_full_backup.json"; a.click(); }; document.getElementById("importFullDataBtn").onclick = () => { const file=document.getElementById("importFileInput").files[0]; if(!file) return alert("Select backup"); const reader=new FileReader(); reader.onload=async e=>{ const data=JSON.parse(e.target.result); if(data.inventory) for(let p of data.inventory) await db.collection("inventory").add(p); if(data.machines) for(let m of data.machines) await db.collection("machines").add(m); if(data.transactions) for(let t of data.transactions) await db.collection("transactions").add(t); if(data.uploads) for(let u of data.uploads) await db.collection("uploads").add(u); if(data.drSalesOrders) for(let d of data.drSalesOrders) await db.collection("dr_sales_orders").add(d); alert("Restored (merged)"); }; reader.readAsText(file); }; }
+  function renderUsersView() { document.getElementById("dynamicContent").innerHTML = `<div style="border:1px solid #acaa93; border-radius:1rem; padding:1rem;"><h3>User Management – Pending Approvals</h3><table class="data-table"><thead><th>Email</th><th>Approved</th><th>Action</th></thead><tbody id="usersTbody"></tbody></table></div>`; const tbody = document.getElementById("usersTbody"); tbody.innerHTML=""; allUsers.forEach(u=>{ const row=tbody.insertRow(); row.insertCell(0).innerText=u.email; row.insertCell(1).innerHTML=u.approved?"✅ Approved":"⏳ Pending"; if(!u.approved){ const btn=document.createElement("button"); btn.innerText="Approve"; btn.className="btn-sm"; btn.onclick=async()=>{ await db.collection("users").doc(u.id).update({approved:true}); showToast(`User ${u.email} approved.`); }; row.insertCell(2).appendChild(btn); } else row.insertCell(2).innerText="—"; }); }
+
+  // ========== DELIVERY RECEIPT & SALES ORDER (exact template) ==========
   function renderDRView() {
     const container = document.getElementById("dynamicContent");
-    container.innerHTML = `
-      <div class="sub-tabs">
-        <button class="sub-tab-btn ${currentDRSubTab === 'north_luzon_pms' ? 'active' : ''}" data-subtab="north_luzon_pms">North Luzon PMS</button>
-        <button class="sub-tab-btn ${currentDRSubTab === 'monitoring_dr' ? 'active' : ''}" data-subtab="monitoring_dr">Monitoring of DR</button>
-      </div>
-      <div id="drContent"></div>
-    `;
-    document.querySelectorAll(".sub-tab-btn").forEach(btn => {
-      btn.onclick = () => {
-        currentDRSubTab = btn.getAttribute("data-subtab");
-        renderDRSubTab();
-        document.querySelectorAll(".sub-tab-btn").forEach(b => b.classList.remove("active"));
-        btn.classList.add("active");
-      };
-    });
+    container.innerHTML = `<div class="sub-tabs"><button class="sub-tab-btn ${currentDRSubTab==='north_luzon_pms'?'active':''}" data-subtab="north_luzon_pms">North Luzon PMS</button><button class="sub-tab-btn ${currentDRSubTab==='monitoring_dr'?'active':''}" data-subtab="monitoring_dr">Monitoring of DR</button></div><div id="drContent"></div>`;
+    document.querySelectorAll(".sub-tab-btn").forEach(btn=>btn.onclick=()=>{ currentDRSubTab=btn.dataset.subtab; renderDRSubTab(); document.querySelectorAll(".sub-tab-btn").forEach(b=>b.classList.remove("active")); btn.classList.add("active"); });
     renderDRSubTab();
   }
 
   function renderDRSubTab() {
-    const records = allDRRecords.filter(r => r.type === currentDRSubTab);
-    const filtered = records.filter(r => {
-      if(!r.date) return false;
-      const d = new Date(r.date);
-      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` === currentMonthFilter;
-    });
+    const records = allDRRecords.filter(r=>r.type===currentDRSubTab);
+    const filtered = records.filter(r=>{ if(!r.date) return false; const d=new Date(r.date); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`===currentMonthFilter; });
     const container = document.getElementById("drContent");
     container.innerHTML = `
       <div style="border:1px solid #acaa93; border-radius:0.75rem; padding:1rem;">
         <div class="flex" style="justify-content:space-between; margin-bottom:1rem;">
-          <div class="flex">
-            <label>Month: <input type="month" id="drMonthFilter" value="${currentMonthFilter}"></label>
-            <button id="refreshDRList" class="btn-sm">Filter</button>
-            <button id="addDRRecordBtn" class="btn-sm">➕ Add Record</button>
-            <button id="deleteAllDRBtn" class="btn-sm" style="background:#fee2e2; color:#b91c1c;">Delete All (This Month)</button>
-          </div>
+          <div class="flex"><label>Month: <input type="month" id="drMonthFilter" value="${currentMonthFilter}"></label><button id="refreshDRList" class="btn-sm">Filter</button><button id="addDRRecordBtn" class="btn-sm">➕ Add Record</button><button id="deleteAllDRBtn" class="btn-sm" style="background:#fee2e2;color:#b91c1c;">Delete All (This Month)</button></div>
           <div><input type="file" id="drCsvFile" accept=".csv"><button id="importDRCsvBtn" class="btn-sm">Import CSV</button><button id="exportDRCsvBtn" class="btn-sm">Export CSV</button></div>
         </div>
-        <div class="overflow-auto">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>DATE</th><th>CUSTOMER</th><th>BRAND</th><th>MODEL</th><th>SERIAL</th>
-                <th>JOB DESCRIPTION</th><th>DETAILS</th><th>DR-RELEASED TO</th><th>DR-RETURN TO</th><th>REMARKS</th><th>COMPLETION DATE</th><th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="drTbody"></tbody>
-          </table>
-        </div>
-      </div>
-    `;
+        <div class="overflow-auto"><table class="data-table"><thead><th>DATE</th><th>CUSTOMER</th><th>BRAND</th><th>MODEL</th><th>SERIAL</th><th>JOB DESCRIPTION</th><th>DETAILS</th><th>DR-RELEASED TO</th><th>DR-RETURN TO</th><th>REMARKS</th><th>COMPLETION DATE</th><th>Actions</th></thead><tbody id="drTbody"></tbody></table></div>
+      </div>`;
     const tbody = document.getElementById("drTbody");
     tbody.innerHTML = "";
     filtered.forEach(rec => {
@@ -604,61 +753,36 @@
       let actions = `<button class="editDRRecord" data-id="${rec.id}">✏️</button> <button class="deleteDRRecord" data-id="${rec.id}">🗑️</button>`;
       row.insertCell(11).innerHTML = actions;
     });
-    document.querySelectorAll(".deleteDRRecord").forEach(btn => btn.onclick = () => { if(confirm("Delete this record?")) db.collection("dr_sales_orders").doc(btn.dataset.id).delete(); });
-    document.querySelectorAll(".editDRRecord").forEach(btn => btn.onclick = () => openDRModal(btn.dataset.id));
-    document.getElementById("refreshDRList").onclick = () => {
-      currentMonthFilter = document.getElementById("drMonthFilter").value;
-      renderDRSubTab();
-    };
+    document.querySelectorAll(".deleteDRRecord").forEach(btn=>btn.onclick=()=>{if(confirm("Delete?")) db.collection("dr_sales_orders").doc(btn.dataset.id).delete();});
+    document.querySelectorAll(".editDRRecord").forEach(btn=>btn.onclick=()=>openDRModal(btn.dataset.id));
+    document.getElementById("refreshDRList").onclick = () => { currentMonthFilter = document.getElementById("drMonthFilter").value; renderDRSubTab(); };
     document.getElementById("addDRRecordBtn").onclick = () => openDRModal();
     document.getElementById("importDRCsvBtn").onclick = () => importDRCSV();
     document.getElementById("exportDRCsvBtn").onclick = () => exportDRCSV();
     document.getElementById("deleteAllDRBtn").onclick = () => {
-      if(confirm(`⚠️ Delete ALL records for ${currentMonthFilter}?`)) {
-        const batch = db.batch();
-        filtered.forEach(rec => batch.delete(db.collection("dr_sales_orders").doc(rec.id)));
-        batch.commit().then(() => showToast("Deleted all records for this month."));
-      }
+      if(confirm(`⚠️ Delete ALL records for ${currentMonthFilter}?`)) { const batch = db.batch(); filtered.forEach(rec => batch.delete(db.collection("dr_sales_orders").doc(rec.id))); batch.commit().then(()=>showToast("Deleted.")); }
     };
   }
 
-  function openDRModal(record = null) {
+  function openDRModal(record=null) {
     const modal = document.createElement("div"); modal.className = "modal";
-    modal.innerHTML = `
-      <div class="modal-content">
-        <h3>${record ? 'Edit Record' : 'Add Record'}</h3>
-        <div class="form-row"><label>Date</label><input type="date" id="drDate" value="${record?.date||''}"></div>
-        <div class="form-row"><label>Customer</label><input id="drCustomer" value="${record?.customer||''}"></div>
-        <div class="form-row"><label>Brand</label><input id="drBrand" value="${record?.brand||''}"></div>
-        <div class="form-row"><label>Model</label><input id="drModel" value="${record?.model||''}"></div>
-        <div class="form-row"><label>Serial</label><input id="drSerial" value="${record?.serial||''}"></div>
-        <div class="form-row"><label>Job Description</label><input id="drJobDesc" value="${record?.jobDescription||''}"></div>
-        <div class="form-row"><label>Details</label><input id="drDetails" value="${record?.details||''}"></div>
-        <div class="form-row"><label>DR-Released to</label><input id="drReleasedTo" value="${record?.drReleasedTo||''}"></div>
-        <div class="form-row"><label>DR-Return to</label><input id="drReturnedTo" value="${record?.drReturnedTo||''}"></div>
-        <div class="form-row"><label>Remarks/Status</label><input id="drRemarks" value="${record?.remarks||''}"></div>
-        <div class="form-row"><label>Completion Date</label><input type="date" id="drCompletionDate" value="${record?.completionDate||''}"></div>
-        <div class="flex"><button id="saveDRBtn" class="btn-primary">Save</button><button id="cancelDRBtn" class="btn-sm">Cancel</button></div>
-      </div>
-    `;
+    modal.innerHTML = `<div class="modal-content"><h3>${record?'Edit':'Add'} Record</h3>
+      <div class="form-row"><label>Date</label><input type="date" id="drDate" value="${record?.date||''}"></div>
+      <div class="form-row"><label>Customer</label><input id="drCustomer" value="${record?.customer||''}"></div>
+      <div class="form-row"><label>Brand</label><input id="drBrand" value="${record?.brand||''}"></div>
+      <div class="form-row"><label>Model</label><input id="drModel" value="${record?.model||''}"></div>
+      <div class="form-row"><label>Serial</label><input id="drSerial" value="${record?.serial||''}"></div>
+      <div class="form-row"><label>Job Description</label><input id="drJobDesc" value="${record?.jobDescription||''}"></div>
+      <div class="form-row"><label>Details</label><input id="drDetails" value="${record?.details||''}"></div>
+      <div class="form-row"><label>DR-Released to</label><input id="drReleasedTo" value="${record?.drReleasedTo||''}"></div>
+      <div class="form-row"><label>DR-Return to</label><input id="drReturnedTo" value="${record?.drReturnedTo||''}"></div>
+      <div class="form-row"><label>Remarks/Status</label><input id="drRemarks" value="${record?.remarks||''}"></div>
+      <div class="form-row"><label>Completion Date</label><input type="date" id="drCompletionDate" value="${record?.completionDate||''}"></div>
+      <div class="flex"><button id="saveDRBtn" class="btn-primary">Save</button><button id="cancelDRBtn" class="btn-sm">Cancel</button></div></div>`;
     document.body.appendChild(modal);
     document.getElementById("cancelDRBtn").onclick = () => modal.remove();
     document.getElementById("saveDRBtn").onclick = async () => {
-      const data = {
-        type: currentDRSubTab,
-        date: document.getElementById("drDate").value,
-        customer: document.getElementById("drCustomer").value,
-        brand: document.getElementById("drBrand").value,
-        model: document.getElementById("drModel").value,
-        serial: document.getElementById("drSerial").value,
-        jobDescription: document.getElementById("drJobDesc").value,
-        details: document.getElementById("drDetails").value,
-        drReleasedTo: document.getElementById("drReleasedTo").value,
-        drReturnedTo: document.getElementById("drReturnedTo").value,
-        remarks: document.getElementById("drRemarks").value,
-        completionDate: document.getElementById("drCompletionDate").value,
-        timestamp: firebase.firestore.FieldValue.serverTimestamp()
-      };
+      const data = { type: currentDRSubTab, date: document.getElementById("drDate").value, customer: document.getElementById("drCustomer").value, brand: document.getElementById("drBrand").value, model: document.getElementById("drModel").value, serial: document.getElementById("drSerial").value, jobDescription: document.getElementById("drJobDesc").value, details: document.getElementById("drDetails").value, drReleasedTo: document.getElementById("drReleasedTo").value, drReturnedTo: document.getElementById("drReturnedTo").value, remarks: document.getElementById("drRemarks").value, completionDate: document.getElementById("drCompletionDate").value, timestamp: firebase.firestore.FieldValue.serverTimestamp() };
       if(record) await db.collection("dr_sales_orders").doc(record.id).update(data);
       else await db.collection("dr_sales_orders").add(data);
       modal.remove();
@@ -667,52 +791,32 @@
 
   async function importDRCSV() {
     const file = document.getElementById("drCsvFile").files[0];
-    if(!file) return alert("Select a CSV file");
+    if(!file) return alert("Select CSV file");
     const reader = new FileReader();
     reader.onload = async (e) => {
       const text = e.target.result;
       const lines = text.split(/\r?\n/);
-      if(lines.length < 2) return alert("CSV file empty");
-      const headers = lines[0].split(",").map(h => h.trim().toUpperCase().replace(/ /g, ' '));
-      // Map headers to our field names (case‑insensitive, allowing spaces/dashes)
-      const mapHeader = (header) => {
-        const h = header.toUpperCase().replace(/[-\s]/g, '');
-        if(h.includes('DATE') && (h.includes('COMPLETION') || h.includes('COMPLETE'))) return 'completionDate';
-        if(h.includes('DATE')) return 'date';
-        if(h.includes('CUSTOMER')) return 'customer';
-        if(h.includes('BRAND')) return 'brand';
-        if(h.includes('MODEL')) return 'model';
-        if(h.includes('SERIAL')) return 'serial';
-        if(h.includes('JOBDESCRIPTION') || h.includes('JOB DESCRIPTION')) return 'jobDescription';
-        if(h.includes('DETAILS')) return 'details';
-        if(h.includes('DR-RELEASED') || h.includes('DRRELEASED')) return 'drReleasedTo';
-        if(h.includes('DR-RETURN') || h.includes('DRRETURN')) return 'drReturnedTo';
-        if(h.includes('REMARKS')) return 'remarks';
-        return null;
-      };
-      const fieldMap = {};
-      headers.forEach((h, idx) => {
-        const field = mapHeader(h);
-        if(field) fieldMap[field] = idx;
-      });
-      if(!fieldMap.date) return alert("CSV must have a DATE column");
+      if(lines.length<2) return alert("CSV empty");
+      const headers = lines[0].split(",").map(h => h.trim().toUpperCase());
+      // Expect exactly 11 columns: DATE, CUSTOMER, BRAND, MODEL, SERIAL, JOB DESCRIPTION, DETAILS, DR-RELEASED TO, DR-RETURN TO, REMARKS, DATE (last one is completion)
+      if(headers.length<11) return alert("CSV must have at least 11 columns (DATE, CUSTOMER, BRAND, MODEL, SERIAL, JOB DESCRIPTION, DETAILS, DR-RELEASED TO, DR-RETURN TO, REMARKS, DATE)");
       let success=0, fail=0;
-      for(let i=1; i<lines.length; i++) {
+      for(let i=1;i<lines.length;i++) {
         if(!lines[i].trim()) continue;
-        const cols = lines[i].split(",").map(c => c.trim().replace(/^"|"$/g, ''));
+        const cols = lines[i].split(",").map(c=>c.trim().replace(/^"|"$/g,''));
         const record = {
           type: currentDRSubTab,
-          date: fieldMap.date !== undefined ? cols[fieldMap.date] : "",
-          customer: fieldMap.customer !== undefined ? cols[fieldMap.customer] : "",
-          brand: fieldMap.brand !== undefined ? cols[fieldMap.brand] : "",
-          model: fieldMap.model !== undefined ? cols[fieldMap.model] : "",
-          serial: fieldMap.serial !== undefined ? cols[fieldMap.serial] : "",
-          jobDescription: fieldMap.jobDescription !== undefined ? cols[fieldMap.jobDescription] : "",
-          details: fieldMap.details !== undefined ? cols[fieldMap.details] : "",
-          drReleasedTo: fieldMap.drReleasedTo !== undefined ? cols[fieldMap.drReleasedTo] : "",
-          drReturnedTo: fieldMap.drReturnedTo !== undefined ? cols[fieldMap.drReturnedTo] : "",
-          remarks: fieldMap.remarks !== undefined ? cols[fieldMap.remarks] : "",
-          completionDate: fieldMap.completionDate !== undefined ? cols[fieldMap.completionDate] : "",
+          date: cols[0] || "",
+          customer: cols[1] || "",
+          brand: cols[2] || "",
+          model: cols[3] || "",
+          serial: cols[4] || "",
+          jobDescription: cols[5] || "",
+          details: cols[6] || "",
+          drReleasedTo: cols[7] || "",
+          drReturnedTo: cols[8] || "",
+          remarks: cols[9] || "",
+          completionDate: cols[10] || "",
           timestamp: firebase.firestore.FieldValue.serverTimestamp()
         };
         try {
@@ -727,26 +831,19 @@
   }
 
   function exportDRCSV() {
-    const records = allDRRecords.filter(r => r.type === currentDRSubTab && r.date && r.date.slice(0,7) === currentMonthFilter);
+    const records = allDRRecords.filter(r => r.type===currentDRSubTab && r.date && r.date.slice(0,7)===currentMonthFilter);
     const headers = ["DATE","CUSTOMER","BRAND","MODEL","SERIAL","JOB DESCRIPTION","DETAILS","DR-RELEASED TO","DR-RETURN TO","REMARKS","COMPLETION DATE"];
-    const rows = records.map(r => [
-      r.date, r.customer, r.brand, r.model, r.serial, r.jobDescription, r.details,
-      r.drReleasedTo, r.drReturnedTo, r.remarks, r.completionDate
-    ]);
-    const csv = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const rows = records.map(r => [r.date, r.customer, r.brand, r.model, r.serial, r.jobDescription, r.details, r.drReleasedTo, r.drReturnedTo, r.remarks, r.completionDate]);
+    const csv = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g,'""')}"`).join(",")).join("\n");
     const blob = new Blob(["\uFEFF"+csv], {type:"text/csv"});
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `${currentDRSubTab}_${currentMonthFilter}.csv`; a.click();
   }
 
-  // ========== MACHINES LOG, PARTS INVENTORY, UPLOADS, BACKUP, USERS ==========
-  // (Full implementations are included in the final answer – all previously working code is present)
-  // For brevity, the complete code is provided in the final paste.
-
   // Quick report
   document.getElementById("quickReportBtn").onclick = () => {
     const totalVal = allInventory.reduce((s,i)=>s+(i.qty*(i.price||0)),0);
-    const lowStock = allInventory.filter(p=>p.qty<=p.threshold && p.qty>0).length;
-    alert(`QUICK REPORT\nTotal Units: ${allInventory.reduce((s,i)=>s+i.qty,0)}\nLow Stock Items: ${lowStock}\nTotal Value: ₱${totalVal.toLocaleString()}`);
+    const low = allInventory.filter(p=>p.qty<=p.threshold && p.qty>0).length;
+    alert(`QUICK REPORT\nTotal Units: ${allInventory.reduce((s,i)=>s+i.qty,0)}\nLow Stock Items: ${low}\nTotal Value: ₱${totalVal.toLocaleString()}`);
   };
 </script>
 </body>
